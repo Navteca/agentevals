@@ -1,126 +1,130 @@
 import React from 'react';
-import { Button, Select, Slider, Space } from 'antd';
+import { Button, Select, Slider } from 'antd';
 import { css } from '@emotion/react';
-import { Play, Settings } from 'lucide-react';
+import { Play } from 'lucide-react';
 import { FileDropZone } from './FileDropZone';
 import { MetricSelector } from './MetricSelector';
 import { useTraceContext } from '../../context/TraceContext';
 
 const uploadViewStyle = css`
-  max-width: 1400px;
+  max-width: 1600px;
   margin: 0 auto;
-  padding: 48px 24px;
+  padding: 24px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 
   .header {
-    margin-bottom: 48px;
+    margin-bottom: 24px;
   }
 
   .title {
-    font-size: 2.5rem;
+    font-size: 2rem;
     font-weight: 700;
     color: var(--text-primary);
-    margin-bottom: 12px;
+    margin-bottom: 8px;
     text-align: center;
   }
 
   .subtitle {
-    font-size: 1.125rem;
+    font-size: 1rem;
     color: var(--text-secondary);
     text-align: center;
   }
 
   .upload-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 24px;
-    margin-bottom: 48px;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    margin-bottom: 16px;
   }
 
   .section {
     background-color: var(--bg-surface);
     border: 1px solid var(--border-default);
-    border-radius: 12px;
-    padding: 24px;
+    border-radius: 8px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
   }
 
   .section-title {
-    font-size: 1.125rem;
+    font-size: 1rem;
     font-weight: 600;
     color: var(--text-primary);
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .section-icon {
-    color: var(--accent-cyan);
+    margin-bottom: 12px;
   }
 
   .metrics-section {
     grid-column: 1 / -1;
+    flex: 1;
+    min-height: 0;
   }
 
-  .settings-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 24px;
-    margin-bottom: 24px;
+  .settings-section {
+    grid-column: 1 / -1;
   }
 
   .setting-item {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
   }
 
   .setting-label {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 500;
     color: var(--text-primary);
   }
 
   .setting-hint {
-    font-size: 12px;
+    font-size: 11px;
     color: var(--text-secondary);
+    margin-top: 2px;
   }
 
   .actions {
     display: flex;
     justify-content: center;
-    margin-top: 48px;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-default);
   }
 
   .run-button {
-    height: 56px;
-    font-size: 18px;
+    height: 48px;
+    font-size: 16px;
     font-weight: 600;
-    padding: 0 48px;
+    padding: 0 36px;
     border-radius: 8px;
     display: flex;
     align-items: center;
-    gap: 12px;
-    box-shadow: var(--glow-info);
+    gap: 10px;
+    background-color: var(--accent-cyan) !important;
+    border-color: var(--accent-cyan) !important;
+    color: #000 !important;
+    box-shadow: 0 0 20px rgba(0, 217, 255, 0.3);
     transition: all 0.3s ease;
 
-    &:hover {
+    &:hover:not(:disabled) {
       transform: translateY(-2px);
       box-shadow: 0 0 30px rgba(0, 217, 255, 0.5);
+      background-color: var(--accent-cyan) !important;
+      border-color: var(--accent-cyan) !important;
     }
 
     &:disabled {
-      opacity: 0.5;
+      opacity: 0.4;
       box-shadow: none;
       transform: none;
+      background-color: var(--bg-surface) !important;
+      border-color: var(--border-default) !important;
+      color: var(--text-secondary) !important;
     }
   }
 
-  @media (max-width: 968px) {
+  @media (max-width: 1024px) {
     .upload-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .settings-grid {
       grid-template-columns: 1fr;
     }
   }
@@ -141,7 +145,7 @@ export const UploadView: React.FC = () => {
   return (
     <div css={uploadViewStyle}>
       <div className="header">
-        <h1 className="title">Trace Analysis Laboratory</h1>
+        <h1 className="title">trace-eval</h1>
         <p className="subtitle">
           Evaluate agent behavior from OpenTelemetry traces without re-running agents
         </p>
@@ -149,10 +153,7 @@ export const UploadView: React.FC = () => {
 
       <div className="upload-grid">
         <div className="section">
-          <div className="section-title">
-            <span className="section-icon">📊</span>
-            Trace Files
-          </div>
+          <div className="section-title">Trace Files</div>
           <FileDropZone
             title="Drop trace files here"
             description="Upload one or more Jaeger JSON trace files"
@@ -160,75 +161,63 @@ export const UploadView: React.FC = () => {
             onChange={actions.setTraceFiles}
           />
           {state.traceFiles.length > 0 && (
-            <div style={{ marginTop: 16, color: 'var(--text-secondary)' }}>
+            <div style={{ marginTop: 12, color: 'var(--text-secondary)', fontSize: '13px' }}>
               {state.traceFiles.length} file(s) selected
             </div>
           )}
         </div>
 
         <div className="section">
-          <div className="section-title">
-            <span className="section-icon">🎯</span>
-            Eval Set (Optional)
-          </div>
+          <div className="section-title">Eval Set (Optional)</div>
           <FileDropZone
             title="Drop eval set file here"
             description="Upload golden eval set JSON for comparison"
             onChange={(files) => actions.setEvalSet(files[0] || null)}
           />
           {state.evalSetFile && (
-            <div style={{ marginTop: 16, color: 'var(--text-secondary)' }}>
+            <div style={{ marginTop: 12, color: 'var(--text-secondary)', fontSize: '13px' }}>
               {state.evalSetFile.name}
             </div>
           )}
         </div>
 
         <div className="section metrics-section">
-          <div className="section-title">
-            <span className="section-icon">📏</span>
-            Metrics Configuration
-          </div>
+          <div className="section-title">Metrics Configuration</div>
           <MetricSelector
             selectedMetrics={state.selectedMetrics}
             onToggleMetric={actions.toggleMetric}
           />
         </div>
 
-        <div className="section">
-          <div className="section-title">
-            <span className="section-icon">
-              <Settings size={20} />
+        <div className="section settings-section">
+          <div className="section-title">Evaluation Settings</div>
+
+          <div className="setting-item">
+            <label className="setting-label">Judge Model</label>
+            <Select
+              value={state.judgeModel}
+              onChange={actions.setJudgeModel}
+              options={JUDGE_MODELS.map((model) => ({ label: model, value: model }))}
+              style={{ width: '100%' }}
+              size="small"
+            />
+            <span className="setting-hint">
+              LLM for judge-based metrics
             </span>
-            Evaluation Settings
           </div>
 
-          <div className="settings-grid">
-            <div className="setting-item">
-              <label className="setting-label">Judge Model</label>
-              <Select
-                value={state.judgeModel}
-                onChange={actions.setJudgeModel}
-                options={JUDGE_MODELS.map((model) => ({ label: model, value: model }))}
-                style={{ width: '100%' }}
-              />
-              <span className="setting-hint">
-                LLM used for judge-based metrics (hallucinations, safety, etc.)
-              </span>
-            </div>
-
-            <div className="setting-item">
-              <label className="setting-label">Pass Threshold: {state.threshold}</label>
-              <Slider
-                min={0}
-                max={1}
-                step={0.05}
-                value={state.threshold}
-                onChange={actions.setThreshold}
-              />
-              <span className="setting-hint">
-                Minimum score required for metrics to pass
-              </span>
-            </div>
+          <div className="setting-item" style={{ marginTop: 12 }}>
+            <label className="setting-label">Pass Threshold: {state.threshold}</label>
+            <Slider
+              min={0}
+              max={1}
+              step={0.05}
+              value={state.threshold}
+              onChange={actions.setThreshold}
+            />
+            <span className="setting-hint">
+              Minimum score to pass
+            </span>
           </div>
         </div>
       </div>
@@ -242,7 +231,7 @@ export const UploadView: React.FC = () => {
           disabled={!canRunEvaluation}
           loading={state.isEvaluating}
         >
-          <Play size={24} />
+          <Play size={20} />
           {state.isEvaluating ? 'Running Evaluation...' : 'Run Evaluation'}
         </Button>
       </div>

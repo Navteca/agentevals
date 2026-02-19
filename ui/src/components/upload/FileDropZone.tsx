@@ -32,13 +32,13 @@ const dropZoneStyle = css`
   }
 
   .ant-upload-text {
-    color: var(--text-primary);
+    color: var(--text-primary) !important;
     font-size: 16px;
     font-weight: 500;
   }
 
   .ant-upload-hint {
-    color: var(--text-secondary);
+    color: var(--text-secondary) !important;
     font-size: 14px;
   }
 `;

@@ -1,4 +1,5 @@
-import React, { useState, useMemo, ReactNode } from 'react';
+import React, { useState, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import { TraceContext } from './TraceContext';
 import type { TraceState } from './TraceContext';
 import type { ViewType } from '../lib/types';

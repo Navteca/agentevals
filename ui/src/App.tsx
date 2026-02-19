@@ -3,6 +3,7 @@ import { TraceProvider } from './context/TraceProvider';
 import { useTraceContext } from './context/TraceContext';
 import { UploadView } from './components/upload/UploadView';
 import { DashboardView } from './components/dashboard/DashboardView';
+import { InspectorView } from './components/inspector/InspectorView';
 
 function AppContent() {
   const { state } = useTraceContext();
@@ -11,12 +12,8 @@ function AppContent() {
     <>
       {state.currentView === 'upload' && <UploadView />}
       {state.currentView === 'dashboard' && <DashboardView />}
-      {/* Inspector and Comparison views will be added in later phases */}
-      {state.currentView === 'inspector' && (
-        <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-secondary)' }}>
-          Inspector view coming soon...
-        </div>
-      )}
+      {state.currentView === 'inspector' && <InspectorView />}
+      {/* Comparison view will be added in later phase */}
       {state.currentView === 'comparison' && (
         <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-secondary)' }}>
           Comparison view coming soon...

@@ -10,61 +10,68 @@ interface MetricSelectorProps {
 }
 
 const selectorStyle = css`
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+
   .metric-categories {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-  }
-
-  .metric-category {
-    background-color: var(--bg-surface);
-    border: 1px solid var(--border-default);
-    border-radius: 8px;
-    padding: 16px;
-  }
-
-  .category-title {
-    color: var(--accent-cyan);
-    font-size: 14px;
-    font-weight: 600;
-    text-transform: uppercase;
-    margin-bottom: 12px;
-    letter-spacing: 0.5px;
-  }
-
-  .metric-list {
     display: flex;
     flex-direction: column;
     gap: 12px;
   }
 
+  .metric-category {
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    padding: 12px;
+  }
+
+  .category-title {
+    color: var(--accent-cyan);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    letter-spacing: 0.5px;
+  }
+
+  .metric-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px 24px;
+  }
+
   .metric-item {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 3px;
+    min-width: 200px;
+    flex: 0 0 auto;
   }
 
   .metric-name {
     color: var(--text-primary);
     font-family: var(--font-mono);
-    font-size: 13px;
+    font-size: 12px;
   }
 
   .metric-description {
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: 11px;
     margin-left: 24px;
+    line-height: 1.3;
   }
 
   .metric-badges {
     display: flex;
-    gap: 6px;
+    gap: 4px;
     margin-left: 24px;
   }
 
   .metric-badge {
-    font-size: 10px;
-    padding: 2px 6px;
+    font-size: 9px;
+    padding: 2px 5px;
     border-radius: 3px;
     font-weight: 500;
   }
@@ -83,8 +90,10 @@ const selectorStyle = css`
 
   .selector-actions {
     display: flex;
-    gap: 12px;
-    margin-top: 16px;
+    gap: 8px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-default);
   }
 
   .ant-checkbox-wrapper {
