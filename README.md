@@ -69,3 +69,19 @@ uv run trace-eval run samples/helm.json --eval-set samples/eval_set_helm.json -m
   "errors": []
 }
 ```
+
+## Web UI
+
+The React UI provides visual trace inspection and evaluation. It calls the Python backend via REST API for all evaluation logic.
+
+**Start locally:**
+
+```console
+# Terminal 1: Start API server
+uv run uvicorn trace_eval.api.app:app --reload --port 8000
+
+# Terminal 2: Start UI
+cd ui && npm run dev
+```
+
+Open http://localhost:5173, upload trace files and an eval set, select metrics, and run evaluation. The UI shows results in a dashboard with interactive trace inspection (span tree, invocations, actual vs expected comparisons).

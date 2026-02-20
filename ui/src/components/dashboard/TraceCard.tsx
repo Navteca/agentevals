@@ -1,7 +1,7 @@
 import React from 'react';
 import { css } from '@emotion/react';
 import { motion } from 'framer-motion';
-import { ChevronRight, AlertTriangle, CheckCircle, XCircle, Info } from 'lucide-react';
+import { ChevronRight, AlertTriangle } from 'lucide-react';
 import type { TraceResult } from '../../lib/types';
 import { truncateTraceId, getStatusColor, getStatusGlow, copyToClipboard } from '../../lib/utils';
 import { MetricScoreCard } from './MetricScoreCard';
@@ -146,11 +146,6 @@ export const TraceCard: React.FC<TraceCardProps> = ({ traceResult, threshold, on
 
   const statusColor = getStatusColor(overallStatus as any);
   const statusGlow = getStatusGlow(overallStatus as any);
-
-  const StatusIcon =
-    overallStatus === 'PASSED' ? CheckCircle :
-    overallStatus === 'FAILED' ? XCircle :
-    Info;
 
   const handleCopyTraceId = (e: React.MouseEvent) => {
     e.stopPropagation();

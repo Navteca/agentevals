@@ -1,6 +1,5 @@
 import React from 'react';
 import { Checkbox, Button } from 'antd';
-import type { CheckboxChangeEvent } from 'antd/es/checkbox';
 import { css } from '@emotion/react';
 import { AVAILABLE_METRICS } from '../../lib/types';
 
@@ -147,7 +146,7 @@ export const MetricSelector: React.FC<MetricSelectorProps> = ({
                 <div key={metric.name} className="metric-item">
                   <Checkbox
                     checked={selectedMetrics.includes(metric.name)}
-                    onChange={(e: CheckboxChangeEvent) => onToggleMetric(metric.name)}
+                    onChange={() => onToggleMetric(metric.name)}
                   >
                     <span className="metric-name">{metric.name}</span>
                   </Checkbox>

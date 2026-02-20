@@ -1,4 +1,3 @@
-import React from 'react';
 import { TraceProvider } from './context/TraceProvider';
 import { useTraceContext } from './context/TraceContext';
 import { UploadView } from './components/upload/UploadView';

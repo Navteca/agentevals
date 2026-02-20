@@ -399,13 +399,3 @@ const placeholderStyles = css`
   }
 `;
 
-const infoStyles = css`
-  background: var(--bg-elevated);
-  padding: 16px;
-  border-radius: 6px;
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  line-height: 1.6;
-  color: var(--text-primary);
-  margin-top: 16px;
-`;

@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { TraceContext } from './TraceContext';
 import type { TraceState } from './TraceContext';
 import type { ViewType } from '../lib/types';
-import { evaluateTraces } from '../lib/evaluator';
+import { evaluateTracesAPI } from '../api/client';
 
 interface TraceProviderProps {
   children: ReactNode;
@@ -50,7 +50,7 @@ export const TraceProvider: React.FC<TraceProviderProps> = ({ children }) => {
         setState((prev) => ({ ...prev, isEvaluating: true, errors: [] }));
 
         try {
-          const result = await evaluateTraces(
+          const result = await evaluateTracesAPI(
             state.traceFiles,
             state.evalSetFile,
             {

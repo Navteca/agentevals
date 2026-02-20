@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { css } from '@emotion/react';
-import { Button, Input, Select, Space } from 'antd';
+import { Button, Input, Select } from 'antd';
 import { ArrowLeft } from 'lucide-react';
 import { TraceCard } from './TraceCard';
 import { SummaryStats } from './SummaryStats';
