@@ -9,7 +9,7 @@ import { useTraceContext } from '../../context/TraceContext';
 import type { EvalStatus } from '../../lib/types';
 
 const dashboardStyle = css`
-  max-width: 1600px;
+  max-width: 2400px;
   margin: 0 auto;
   padding: 24px;
 

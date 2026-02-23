@@ -17,13 +17,10 @@ export const BuilderHeader: React.FC<BuilderHeaderProps> = ({
   return (
     <div css={headerStyle}>
       <div css={leftSectionStyle}>
-        <Button
-          icon={<ArrowLeft size={16} />}
-          onClick={onBack}
-          type="text"
-        >
+        <button css={navButtonStyle} onClick={onBack}>
+          <ArrowLeft size={16} />
           Back
-        </Button>
+        </button>
         <div css={titleStyle}>
           <h1>EvalSet Builder</h1>
           <span css={evalSetIdStyle}>{evalSetId}</span>
@@ -50,6 +47,26 @@ const headerStyle = css`
   padding: 16px 24px;
   border-bottom: 1px solid var(--border-default);
   background: var(--bg-surface);
+`;
+
+const navButtonStyle = css`
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  &:hover {
+    border-color: var(--accent-cyan);
+    color: var(--accent-cyan);
+    background: var(--bg-elevated);
+  }
 `;
 
 const leftSectionStyle = css`

@@ -15,11 +15,21 @@ interface TraceTableProps {
 }
 
 const tableStyle = css`
+  width: 100%;
+
   .ant-table {
     background: var(--bg-surface);
     border: 1px solid var(--border-default);
     border-radius: 8px;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  .ant-table-container {
+    width: 100%;
+  }
+
+  .ant-table-content {
+    overflow-x: auto;
   }
 
   .ant-table-thead > tr > th {
@@ -37,10 +47,15 @@ const tableStyle = css`
     cursor: pointer;
     transition: all 0.2s ease;
     border-bottom: 1px solid var(--border-subtle);
+    border-left: 4px solid transparent;
+    background: transparent !important;
+    outline: 2px solid transparent;
+    outline-offset: -2px;
 
     &:hover {
-      background: var(--bg-elevated);
-      box-shadow: 0 2px 8px rgba(0, 217, 255, 0.1);
+      border-left-color: var(--accent-cyan);
+      outline-color: var(--accent-cyan);
+      background: transparent !important;
     }
 
     &.pending-row {
@@ -52,6 +67,20 @@ const tableStyle = css`
   .ant-table-tbody > tr > td {
     padding: 12px 16px;
     color: var(--text-primary);
+    background: transparent !important;
+  }
+
+  .ant-table-tbody > tr:hover > td {
+    background: transparent !important;
+  }
+
+  .ant-table-thead > tr > th,
+  .ant-table-tbody > tr > td {
+    border-color: var(--border-default);
+  }
+
+  .ant-table-tbody > tr:last-child > td {
+    border-bottom: none;
   }
 
   .loading-cell {
@@ -160,7 +189,7 @@ export const TraceTable: React.FC<TraceTableProps> = ({
       title: 'Input',
       dataIndex: 'userInputPreview',
       key: 'userInputPreview',
-      width: 200,
+      width: 180,
       ellipsis: true,
       render: (text: string | undefined) => {
         if (!text) {
@@ -182,7 +211,7 @@ export const TraceTable: React.FC<TraceTableProps> = ({
       title: 'Output',
       dataIndex: 'finalOutputPreview',
       key: 'finalOutputPreview',
-      width: 200,
+      width: 120,
       ellipsis: true,
       render: (text: string | undefined) => {
         if (!text) {
@@ -219,7 +248,7 @@ export const TraceTable: React.FC<TraceTableProps> = ({
     ...selectedMetrics.map((metricName) => ({
       title: metricName.replace(/_/g, ' ').toUpperCase(),
       key: metricName,
-      width: 140,
+      width: 160,
       render: (_: any, record: TraceTableRow) => {
         const metricResult = record.metricResults.get(metricName);
 
@@ -274,6 +303,7 @@ export const TraceTable: React.FC<TraceTableProps> = ({
         dataSource={rows}
         rowKey="traceId"
         pagination={false}
+        scroll={{ x: 'max-content' }}
         onRow={(record) => ({
           onClick: () => {
             if (record.agentName || record.startTime || record.model) {

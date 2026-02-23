@@ -1,0 +1,36 @@
+{
+  "eval_set_id": "evalset_k8s_2026-02-20",
+  "name": "Eval Set for k8s",
+  "description": "Generated from 1 trace(s) on 2/20/2026, 1:21:41 PM",
+  "eval_cases": [
+    {
+      "eval_id": "d497c9dd_case_1",
+      "conversation": [
+        {
+          "invocation_id": "bfdb163f37e04a47",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "list all Helm releases"
+              }
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "To list all Helm releases, I would typically use Helm CLI commands like `helm list --all-namespaces`. However, I currently only have access to Kubernetes cluster via the available functions and do not have direct Helm CLI access.\n\nI can help by listing Kubernetes resources related to Helm releases. Helm stores release information as secrets or configmaps in namespaces, commonly in the \"kube-system\" or the namespace of the release with labels such as `owner=helm`.\n\nWould you like me to:\n1. List all Helm release secrets across all namespaces?\n2. List configmaps labeled as Helm release metadata?\n3. Or provide another approach?\n\nPlease confirm or specify how you'd like to proceed."
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [],
+            "tool_responses": []
+          },
+          "creation_timestamp": 1771237881568036
+        }
+      ]
+    }
+  ]
+}
