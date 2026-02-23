@@ -1,12 +1,11 @@
 import React from 'react';
 import { css } from '@emotion/react';
-import { Line } from 'react-chartjs-2';
+import { Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
-  PointElement,
-  LineElement,
+  BarElement,
   Title,
   Tooltip,
   Legend,
@@ -16,8 +15,7 @@ import type { TraceResult } from '../../lib/types';
 ChartJS.register(
   CategoryScale,
   LinearScale,
-  PointElement,
-  LineElement,
+  BarElement,
   Title,
   Tooltip,
   Legend
@@ -44,21 +42,22 @@ export const PerformanceCharts: React.FC<PerformanceChartsProps> = ({ traceResul
     ? sortedTraces.findIndex(tr => tr.traceId === hoveredTraceId)
     : -1;
 
-  const getPointRadius = (dataLength: number) =>
-    Array.from({ length: dataLength }, (_, i) => i === hoveredIndex ? 6 : 3);
-
-  const getPointBorderWidth = (dataLength: number) =>
-    Array.from({ length: dataLength }, (_, i) => i === hoveredIndex ? 3 : 1);
-
-  const getSegmentOpacity = (baseColor: string) => {
-    if (hoveredIndex === -1) return baseColor;
-    return baseColor.replace('rgb', 'rgba').replace(')', ', 0.3)');
+  const getBackgroundColor = (baseColor: string, dataLength: number) => {
+    if (hoveredIndex === -1) {
+      return Array.from({ length: dataLength }, () => baseColor);
+    }
+    return Array.from({ length: dataLength }, (_, i) =>
+      i === hoveredIndex ? baseColor : baseColor.replace('0.2)', '0.1)')
+    );
   };
 
   const getBorderColor = (baseColor: string, dataLength: number) => {
-    if (hoveredIndex === -1) return baseColor;
+    const solidColor = baseColor.replace('rgba', 'rgb').replace(/, 0\.\d+\)/, ')');
+    if (hoveredIndex === -1) {
+      return Array.from({ length: dataLength }, () => solidColor);
+    }
     return Array.from({ length: dataLength }, (_, i) =>
-      i === hoveredIndex ? baseColor : getSegmentOpacity(baseColor)
+      i === hoveredIndex ? solidColor : solidColor.replace('rgb', 'rgba').replace(')', ', 0.3)')
     );
   };
 
@@ -68,29 +67,23 @@ export const PerformanceCharts: React.FC<PerformanceChartsProps> = ({ traceResul
       {
         label: 'p50',
         data: sortedTraces.map(tr => tr.performanceMetrics?.latency.overall.p50 || 0),
-        borderColor: getBorderColor('rgb(75, 192, 192)', sortedTraces.length),
-        backgroundColor: 'rgba(75, 192, 192, 0.2)',
-        pointRadius: getPointRadius(sortedTraces.length),
-        pointBorderWidth: getPointBorderWidth(sortedTraces.length),
-        tension: 0.1,
+        backgroundColor: getBackgroundColor('rgba(75, 192, 192, 0.2)', sortedTraces.length),
+        borderColor: getBorderColor('rgba(75, 192, 192, 0.2)', sortedTraces.length),
+        borderWidth: 2,
       },
       {
         label: 'p95',
         data: sortedTraces.map(tr => tr.performanceMetrics?.latency.overall.p95 || 0),
-        borderColor: getBorderColor('rgb(255, 159, 64)', sortedTraces.length),
-        backgroundColor: 'rgba(255, 159, 64, 0.2)',
-        pointRadius: getPointRadius(sortedTraces.length),
-        pointBorderWidth: getPointBorderWidth(sortedTraces.length),
-        tension: 0.1,
+        backgroundColor: getBackgroundColor('rgba(255, 159, 64, 0.2)', sortedTraces.length),
+        borderColor: getBorderColor('rgba(255, 159, 64, 0.2)', sortedTraces.length),
+        borderWidth: 2,
       },
       {
         label: 'p99',
         data: sortedTraces.map(tr => tr.performanceMetrics?.latency.overall.p99 || 0),
-        borderColor: getBorderColor('rgb(255, 99, 132)', sortedTraces.length),
-        backgroundColor: 'rgba(255, 99, 132, 0.2)',
-        pointRadius: getPointRadius(sortedTraces.length),
-        pointBorderWidth: getPointBorderWidth(sortedTraces.length),
-        tension: 0.1,
+        backgroundColor: getBackgroundColor('rgba(255, 99, 132, 0.2)', sortedTraces.length),
+        borderColor: getBorderColor('rgba(255, 99, 132, 0.2)', sortedTraces.length),
+        borderWidth: 2,
       },
     ],
   };
@@ -101,31 +94,23 @@ export const PerformanceCharts: React.FC<PerformanceChartsProps> = ({ traceResul
       {
         label: 'Total Tokens',
         data: sortedTraces.map(tr => tr.performanceMetrics?.tokens.total || 0),
-        borderColor: getBorderColor('rgb(153, 102, 255)', sortedTraces.length),
-        backgroundColor: 'rgba(153, 102, 255, 0.2)',
-        pointRadius: getPointRadius(sortedTraces.length),
-        pointBorderWidth: getPointBorderWidth(sortedTraces.length),
-        tension: 0.1,
+        backgroundColor: getBackgroundColor('rgba(153, 102, 255, 0.2)', sortedTraces.length),
+        borderColor: getBorderColor('rgba(153, 102, 255, 0.2)', sortedTraces.length),
+        borderWidth: 2,
       },
       {
         label: 'Prompt Tokens',
         data: sortedTraces.map(tr => tr.performanceMetrics?.tokens.totalPrompt || 0),
-        borderColor: getBorderColor('rgb(54, 162, 235)', sortedTraces.length),
-        backgroundColor: 'rgba(54, 162, 235, 0.2)',
-        pointRadius: getPointRadius(sortedTraces.length),
-        pointBorderWidth: getPointBorderWidth(sortedTraces.length),
-        tension: 0.1,
-        borderDash: [5, 5],
+        backgroundColor: getBackgroundColor('rgba(54, 162, 235, 0.2)', sortedTraces.length),
+        borderColor: getBorderColor('rgba(54, 162, 235, 0.2)', sortedTraces.length),
+        borderWidth: 2,
       },
       {
         label: 'Output Tokens',
         data: sortedTraces.map(tr => tr.performanceMetrics?.tokens.totalOutput || 0),
-        borderColor: getBorderColor('rgb(255, 206, 86)', sortedTraces.length),
-        backgroundColor: 'rgba(255, 206, 86, 0.2)',
-        pointRadius: getPointRadius(sortedTraces.length),
-        pointBorderWidth: getPointBorderWidth(sortedTraces.length),
-        tension: 0.1,
-        borderDash: [5, 5],
+        backgroundColor: getBackgroundColor('rgba(255, 206, 86, 0.2)', sortedTraces.length),
+        borderColor: getBorderColor('rgba(255, 206, 86, 0.2)', sortedTraces.length),
+        borderWidth: 2,
       },
     ],
   };
@@ -221,14 +206,14 @@ export const PerformanceCharts: React.FC<PerformanceChartsProps> = ({ traceResul
       <div css={chartCardStyle}>
         <h3>Latency Across Traces</h3>
         <div css={chartWrapperStyle}>
-          <Line data={latencyData} options={latencyOptions} />
+          <Bar data={latencyData} options={latencyOptions} />
         </div>
       </div>
 
       <div css={chartCardStyle}>
         <h3>Token Usage Across Traces</h3>
         <div css={chartWrapperStyle}>
-          <Line data={tokenData} options={tokenOptions} />
+          <Bar data={tokenData} options={tokenOptions} />
         </div>
       </div>
     </div>
