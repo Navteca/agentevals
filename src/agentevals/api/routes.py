@@ -412,6 +412,7 @@ async def evaluate_traces_stream(
                             "evalStatus": mr.eval_status,
                             "perInvocationScores": mr.per_invocation_scores,
                             "error": mr.error,
+                            "details": mr.details,
                         }
                         for mr in trace_result.metric_results
                     ],
@@ -451,6 +452,7 @@ async def evaluate_traces_stream(
                                                 "evalStatus": mr.eval_status,
                                                 "perInvocationScores": mr.per_invocation_scores,
                                                 "error": mr.error,
+                                                "details": mr.details,
                                             }
                                             for mr in tr.metric_results
                                         ],

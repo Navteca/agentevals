@@ -1,4 +1,4 @@
-import type { RunResult, EvalConfig } from '../lib/types';
+import type { RunResult, EvalConfig, TraceResult } from '../lib/types';
 
 // API base URL (configured for development)
 const API_BASE_URL = 'http://localhost:8000/api';

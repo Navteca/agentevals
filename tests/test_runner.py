@@ -8,6 +8,7 @@ from agentevals.runner import run_evaluation, load_eval_set
 
 SAMPLES_DIR = os.path.join(os.path.dirname(__file__), "..", "samples")
 HELM_TRACE = os.path.join(SAMPLES_DIR, "helm.json")
+HELM_3_TRACE = os.path.join(SAMPLES_DIR, "helm_3.json")
 EVAL_SET = os.path.join(SAMPLES_DIR, "eval_set_helm.json")
 
 
@@ -66,6 +67,47 @@ class TestRunner:
         assert case.eval_id == "helm_list_releases"
         assert case.conversation is not None
         assert len(case.conversation) == 1
+
+    @pytest.mark.skipif(
+        not os.path.exists(HELM_3_TRACE),
+        reason="helm_3.json not available",
+    )
+    def test_trajectory_failure_details(self):
+        """Failed trajectory evaluation should include expected vs actual details."""
+        config = EvalRunConfig(
+            trace_files=[HELM_3_TRACE],
+            eval_set_file=EVAL_SET,
+            metrics=["tool_trajectory_avg_score"],
+        )
+        result = run_evaluation(config)
+
+        assert len(result.trace_results) == 1
+        tr = result.trace_results[0]
+        assert len(tr.metric_results) == 1
+
+        mr = tr.metric_results[0]
+        assert mr.metric_name == "tool_trajectory_avg_score"
+        assert mr.score == 0.0
+        assert mr.eval_status == "FAILED"
+
+        # Check that details are populated
+        assert mr.details is not None
+        assert "comparisons" in mr.details
+        comparisons = mr.details["comparisons"]
+        assert len(comparisons) == 1
+
+        comp = comparisons[0]
+        assert comp["matched"] is False
+        assert len(comp["expected"]) == 1
+        assert len(comp["actual"]) == 1
+
+        # Expected has empty args
+        assert comp["expected"][0]["name"] == "helm_list_releases"
+        assert comp["expected"][0]["args"] == {}
+
+        # Actual has args
+        assert comp["actual"][0]["name"] == "helm_list_releases"
+        assert comp["actual"][0]["args"] == {"all_namespaces": "true", "output": "json"}
         inv = case.conversation[0]
         assert inv.user_content.parts[0].text == "list all Helm releases"
 

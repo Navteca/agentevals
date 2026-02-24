@@ -71,6 +71,11 @@ def _format_table(run_result: RunResult) -> str:
             )
             lines.append(table)
 
+        for mr in trace_result.metric_results:
+            if mr.details and mr.eval_status == "FAILED":
+                lines.append(_format_metric_details(mr))
+                lines.append("")
+
         if trace_result.performance_metrics:
             perf = trace_result.performance_metrics
             lines.append("\n  Performance Metrics:")
@@ -110,15 +115,16 @@ def _format_json(run_result: RunResult) -> str:
             "metrics": [],
         }
         for mr in tr.metric_results:
-            trace_data["metrics"].append(
-                {
-                    "metric_name": mr.metric_name,
-                    "score": mr.score,
-                    "eval_status": mr.eval_status,
-                    "per_invocation_scores": mr.per_invocation_scores,
-                    "error": mr.error,
-                }
-            )
+            metric_data = {
+                "metric_name": mr.metric_name,
+                "score": mr.score,
+                "eval_status": mr.eval_status,
+                "per_invocation_scores": mr.per_invocation_scores,
+                "error": mr.error,
+            }
+            if mr.details:
+                metric_data["details"] = mr.details
+            trace_data["metrics"].append(metric_data)
         if tr.performance_metrics:
             trace_data["performance_metrics"] = tr.performance_metrics
         data["traces"].append(trace_data)
@@ -151,6 +157,32 @@ def _format_summary(run_result: RunResult) -> str:
             else:
                 lines.append(f"  {icon} {mr.metric_name}: N/A ({mr.eval_status})")
         lines.append("")
+
+    return "\n".join(lines)
+
+
+def _format_metric_details(mr: MetricResult) -> str:
+    """Format detailed comparison for metrics with details field."""
+    lines = []
+
+    if mr.metric_name == "tool_trajectory_avg_score" and mr.details:
+        comparisons = mr.details.get("comparisons", [])
+        for i, comp in enumerate(comparisons, 1):
+            if not comp.get("matched", True):
+                lines.append(f"  Invocation {i} trajectory mismatch:")
+                lines.append("    Expected:")
+                for tool in comp.get("expected", []):
+                    args_str = json.dumps(tool["args"]) if tool["args"] else "{}"
+                    lines.append(f"      - {tool['name']}({args_str})")
+                if not comp.get("expected"):
+                    lines.append("      (none)")
+
+                lines.append("    Actual:")
+                for tool in comp.get("actual", []):
+                    args_str = json.dumps(tool["args"]) if tool["args"] else "{}"
+                    lines.append(f"      - {tool['name']}({args_str})")
+                if not comp.get("actual"):
+                    lines.append("      (none)")
 
     return "\n".join(lines)
 

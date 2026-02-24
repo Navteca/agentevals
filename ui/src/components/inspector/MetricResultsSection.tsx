@@ -3,6 +3,7 @@ import { css } from '@emotion/react';
 import { CheckCircle, XCircle, AlertCircle, MinusCircle, Loader2 } from 'lucide-react';
 import type { MetricResult } from '../../lib/types';
 import { getStatusColor } from '../../lib/utils';
+import { TrajectoryComparisonDetails } from './TrajectoryComparisonDetails';
 
 interface MetricResultsSectionProps {
   metricResults: MetricResult[];
@@ -104,6 +105,10 @@ export const MetricResultsSection: React.FC<MetricResultsSectionProps> = ({
                     <AlertCircle size={14} />
                     <span>{result.error}</span>
                   </div>
+                )}
+
+                {result.details?.comparisons && (
+                  <TrajectoryComparisonDetails comparisons={result.details.comparisons} />
                 )}
               </div>
             </div>

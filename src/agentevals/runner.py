@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
-from google.adk.evaluation.eval_case import EvalCase, Invocation
+from google.adk.evaluation.eval_case import EvalCase, Invocation, get_all_tool_calls
 from google.adk.evaluation.eval_metrics import (
     BaseCriterion,
     EvalMetric,
@@ -58,6 +58,7 @@ class MetricResult:
     eval_status: str = "NOT_EVALUATED"
     per_invocation_scores: list[float | None] = field(default_factory=list)
     error: str | None = None
+    details: dict[str, Any] | None = None  # Additional details (e.g., expected vs actual)
 
 
 @dataclass
@@ -241,6 +242,41 @@ async def _evaluate_trace(
     return trace_result
 
 
+def _extract_trajectory_details(eval_result: EvaluationResult) -> dict[str, Any]:
+    """Extract expected vs actual tool call details from trajectory evaluation."""
+    comparisons = []
+
+    for per_inv_result in eval_result.per_invocation_results:
+        actual_inv = per_inv_result.actual_invocation
+        expected_inv = per_inv_result.expected_invocation
+
+        actual_tools = []
+        expected_tools = []
+
+        if actual_inv and actual_inv.intermediate_data:
+            tool_calls = get_all_tool_calls(actual_inv.intermediate_data)
+            actual_tools = [
+                {"name": tc.name, "args": tc.args}
+                for tc in tool_calls
+            ]
+
+        if expected_inv and expected_inv.intermediate_data:
+            tool_calls = get_all_tool_calls(expected_inv.intermediate_data)
+            expected_tools = [
+                {"name": tc.name, "args": tc.args}
+                for tc in tool_calls
+            ]
+
+        comparisons.append({
+            "invocation_id": actual_inv.invocation_id if actual_inv else None,
+            "expected": expected_tools,
+            "actual": actual_tools,
+            "matched": per_inv_result.score == 1.0,
+        })
+
+    return {"comparisons": comparisons}
+
+
 async def _evaluate_metric(
     metric_name: str,
     actual_invocations: list[Invocation],
@@ -274,11 +310,16 @@ async def _evaluate_metric(
 
         per_inv_scores = [r.score for r in eval_result.per_invocation_results]
 
+        details = None
+        if metric_name == "tool_trajectory_avg_score":
+            details = _extract_trajectory_details(eval_result)
+
         return MetricResult(
             metric_name=metric_name,
             score=eval_result.overall_score,
             eval_status=eval_result.overall_eval_status.name,
             per_invocation_scores=per_inv_scores,
+            details=details,
         )
 
     except Exception as exc:

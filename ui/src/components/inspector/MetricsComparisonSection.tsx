@@ -3,6 +3,7 @@ import { css } from '@emotion/react';
 import { CheckCircle, XCircle, AlertCircle, MinusCircle, Loader2 } from 'lucide-react';
 import type { MetricResult, Invocation } from '../../lib/types';
 import { getStatusColor } from '../../lib/utils';
+import { TrajectoryComparisonDetails } from './TrajectoryComparisonDetails';
 
 interface MetricsComparisonSectionProps {
   metricResults: MetricResult[];
@@ -231,6 +232,12 @@ export const MetricsComparisonSection: React.FC<MetricsComparisonSectionProps> =
                       </span>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {result.details?.comparisons && (
+                <div css={detailsContainerStyles}>
+                  <TrajectoryComparisonDetails comparisons={result.details.comparisons} />
                 </div>
               )}
             </div>
@@ -471,4 +478,10 @@ const invocationScoreStyles = css`
   padding: 4px 10px;
   border-radius: 4px;
   border: 1px solid var(--border-default);
+`;
+
+const detailsContainerStyles = css`
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-default);
+  background: var(--bg-primary);
 `;
