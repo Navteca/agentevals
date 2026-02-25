@@ -185,7 +185,7 @@ export interface EvalSet {
 }
 
 // View types
-export type ViewType = 'welcome' | 'upload' | 'dashboard' | 'inspector' | 'comparison' | 'builder';
+export type ViewType = 'welcome' | 'upload' | 'dashboard' | 'inspector' | 'comparison' | 'builder' | 'streaming';
 
 // Metric metadata type
 export interface MetricMetadata {
