@@ -21,7 +21,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@v7
         with:
-          enable-caching: true
+          enable-cache: true
 
       - uses: actions/setup-node@v6
         with:
@@ -47,7 +47,6 @@ jobs:
         with:
           name: wheels
           path: dist/*.whl
-          archive: false
 
   github-release:
     needs: build
