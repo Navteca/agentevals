@@ -185,8 +185,7 @@ export const UploadView: React.FC = () => {
   const canRunEvaluation =
     state.traceFiles.length > 0 &&
     state.selectedMetrics.length > 0 &&
-    !state.isLoadingMetadata &&
-    state.traceMetadata.size > 0;
+    !state.isLoadingMetadata;
 
   return (
     <div css={uploadViewStyle}>

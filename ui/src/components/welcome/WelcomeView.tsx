@@ -35,20 +35,20 @@ export const WelcomeView: React.FC = () => {
             <p>Live streaming mode - see traces and evaluations in real-time as you iterate on your agent</p>
           </button>
 
-          <button css={optionCardStyle} onClick={handleGetStarted}>
-            <div css={iconWrapperStyle}>
-              <FileJson size={48} />
-            </div>
-            <h3>EvalSet Builder</h3>
-            <p>Turn your traces into golden EvalSets</p>
-          </button>
-
           <button css={optionCardStyle} onClick={handleExpertMode}>
             <div css={iconWrapperStyle}>
               <Play size={48} />
             </div>
             <h3>Offline evaluations</h3>
             <p>Upload traces and EvalSets to run batch evaluations</p>
+          </button>
+
+          <button css={optionCardStyle} onClick={handleGetStarted}>
+            <div css={iconWrapperStyle}>
+              <FileJson size={48} />
+            </div>
+            <h3>EvalSet Builder</h3>
+            <p>Turn your traces into golden EvalSets</p>
           </button>
         </div>
       </div>
