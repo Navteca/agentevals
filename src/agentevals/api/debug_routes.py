@@ -13,7 +13,7 @@ import zipfile
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter
+from fastapi import APIRouter, UploadFile, File as FastAPIFile, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -178,3 +178,80 @@ async def create_debug_bundle(diagnostics: FrontendDiagnostics):
             "Content-Disposition": f'attachment; filename="bug-report-{timestamp}.zip"'
         },
     )
+
+
+@debug_router.post("/load")
+async def load_debug_bundle(file: UploadFile = FastAPIFile(...)):
+    if not _trace_manager:
+        raise HTTPException(
+            status_code=400,
+            detail="Live mode is not enabled. Start with: agentevals serve --dev",
+        )
+
+    content = await file.read()
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(content))
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Invalid ZIP file")
+
+    session_dirs: dict[str, list[str]] = {}
+    for name in zf.namelist():
+        parts = name.split("/")
+        if len(parts) >= 4 and parts[-3] == "sessions":
+            sid = parts[-2]
+            session_dirs.setdefault(sid, []).append(name)
+
+    if not session_dirs:
+        raise HTTPException(status_code=400, detail="No sessions found in ZIP")
+
+    from ..streaming.session import TraceSession
+
+    loaded = []
+    for sid, files in session_dirs.items():
+        meta_file = next((f for f in files if f.endswith("session_meta.json")), None)
+        spans_file = next((f for f in files if f.endswith("spans.json")), None)
+        logs_file = next((f for f in files if f.endswith("logs.json")), None)
+
+        if not spans_file:
+            continue
+
+        meta = json.loads(zf.read(meta_file)) if meta_file else {}
+        spans = json.loads(zf.read(spans_file))
+        logs = json.loads(zf.read(logs_file)) if logs_file else []
+
+        session = TraceSession(
+            session_id=meta.get("session_id", sid),
+            trace_id=meta.get("trace_id", sid),
+            eval_set_id=meta.get("eval_set_id"),
+            spans=spans,
+            logs=logs,
+            is_complete=True,
+            metadata=meta.get("metadata", {}),
+        )
+
+        _trace_manager.sessions[session.session_id] = session
+
+        await _trace_manager.broadcast_to_ui({
+            "type": "session_started",
+            "session": {
+                "sessionId": session.session_id,
+                "traceId": session.trace_id,
+                "evalSetId": session.eval_set_id,
+                "metadata": session.metadata,
+                "startedAt": session.started_at.isoformat(),
+            },
+        })
+
+        invocations_data = await _trace_manager._extract_invocations(session)
+        await _trace_manager._save_spans_to_temp_file(session)
+
+        await _trace_manager.broadcast_to_ui({
+            "type": "session_complete",
+            "sessionId": session.session_id,
+            "invocations": invocations_data,
+        })
+
+        loaded.append(session.session_id)
+        logger.info("Loaded session from bug report: %s", session.session_id)
+
+    return {"loaded_sessions": loaded, "count": len(loaded)}

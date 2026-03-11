@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { css } from '@emotion/react';
 import { Radio, Play, FileJson, Bug } from 'lucide-react';
 import { useTraceContext } from '../../context/TraceContext';
 import type { ViewType } from '../../lib/types';
 import { BugReportModal } from '../bug-report/BugReportModal';
+import { loadBugReport } from '../../api/client';
 
 type SidebarSection = 'streaming' | 'offline' | 'builder';
 
@@ -24,6 +25,23 @@ export const Sidebar: React.FC = () => {
   const { state, actions } = useTraceContext();
   const activeSection = getActiveSection(state.currentView);
   const [showBugReport, setShowBugReport] = useState(false);
+  const [loadStatus, setLoadStatus] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleLoadBugReport = async (file: File) => {
+    setLoadStatus('Loading...');
+    try {
+      const result = await loadBugReport(file);
+      setLoadStatus(`Loaded ${result.count} session${result.count !== 1 ? 's' : ''}`);
+      actions.setCurrentView('streaming');
+      setTimeout(() => setLoadStatus(null), 3000);
+    } catch (err) {
+      setLoadStatus('Load failed');
+      console.error('Bug report load failed:', err);
+      setTimeout(() => setLoadStatus(null), 3000);
+    }
+  };
 
   return (
     <>
@@ -60,13 +78,37 @@ export const Sidebar: React.FC = () => {
 
         <div css={footerStyle}>
           <button
-            onClick={() => setShowBugReport(true)}
+            onClick={() => {
+              if (clickTimer.current) return;
+              clickTimer.current = setTimeout(() => {
+                clickTimer.current = null;
+                setShowBugReport(true);
+              }, 250);
+            }}
+            onDoubleClick={() => {
+              if (clickTimer.current) {
+                clearTimeout(clickTimer.current);
+                clickTimer.current = null;
+              }
+              fileInputRef.current?.click();
+            }}
             css={bugReportButtonStyle}
             title="Generate bug report"
           >
             <Bug size={14} />
-            Bug Report
+            {loadStatus ?? 'Bug Report'}
           </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".zip"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleLoadBugReport(file);
+              e.target.value = '';
+            }}
+          />
           {state.version && (
             <span>v{state.version}</span>
           )}

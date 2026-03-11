@@ -19,6 +19,7 @@ export const config = {
       streamingSessions: `${API_BASE_URL}/api/streaming/sessions`,
       uiUpdatesStream: `${API_BASE_URL}/stream/ui-updates`,
       debugBundle: `${API_BASE_URL}/api/debug/bundle`,
+      debugLoad: `${API_BASE_URL}/api/debug/load`,
     },
   },
   websocket: {
