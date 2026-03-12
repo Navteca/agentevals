@@ -102,14 +102,22 @@ def _collect_sessions() -> list[dict]:
     return sessions_data
 
 
-def _collect_temp_files() -> dict[str, str]:
+def _collect_temp_files(session_ids: set[str] | None = None) -> dict[str, str]:
+    """Collect temp files, filtering JSONL files to current sessions only."""
     tmp_dir = tempfile.gettempdir()
     files = {}
     for pattern in ["agentevals_*.jsonl", "eval_set_*.json"]:
         for path in glob.glob(os.path.join(tmp_dir, pattern)):
+            basename = os.path.basename(path)
+            # Filter JSONL files to only include current sessions
+            if session_ids is not None and basename.endswith(".jsonl"):
+                # Extract session ID from filename: agentevals_{session_id}.jsonl
+                sid = basename.removeprefix("agentevals_").removesuffix(".jsonl")
+                if sid not in session_ids:
+                    continue
             try:
                 with open(path) as f:
-                    files[os.path.basename(path)] = f.read()
+                    files[basename] = f.read()
             except OSError:
                 logger.debug("Could not read temp file %s", path)
     return files
@@ -153,7 +161,8 @@ async def create_debug_bundle(diagnostics: FrontendDiagnostics):
 
         zf.writestr(f"{prefix}/backend_logs.txt", log_buffer.get_text())
 
-        temp_files = _collect_temp_files()
+        current_session_ids = {s["session_id"] for s in sessions}
+        temp_files = _collect_temp_files(session_ids=current_session_ids)
         for filename, content in temp_files.items():
             zf.writestr(f"{prefix}/temp_files/{filename}", content)
 
