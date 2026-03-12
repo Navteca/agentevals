@@ -177,22 +177,22 @@ Flags anomalies (missing tool calls, repeated calls, abrupt stops) and suggests 
 
 ## Local Development
 
-The project uses Nix for reproducible development environments. All dependencies (Python, Node.js, packages) are managed via `flake.nix`:
-
 ```bash
-# Enter development shell
-nix develop .
-
-# Run tests
-uv run pytest
-
-# Run specific test
-uv run pytest tests/test_runner.py -v
+uv run pytest              # run tests
+uv run agentevals serve --dev  # start backend in dev mode
+cd ui && npm run dev           # start frontend (separate terminal)
 ```
+
+See [DEVELOPMENT.md](DEVELOPMENT.md) for build tiers, Makefile targets, Nix setup, and release instructions.
 
 ## FAQ
 
-**How does this compare to ADK's evaulations?**
-Unlike ADK's LocalEvalService, which couples agent execution with evaluation, agentevals only handles scoring: it takes pre-recorded traces and compares them against expected behavior using metrics like tool trajectory matching, response quality, and LLM-based judgments. 
+**How does this compare to ADK's evaluations?**
+Unlike ADK's LocalEvalService, which couples agent execution with evaluation, agentevals only handles scoring: it takes pre-recorded traces and compares them against expected behavior using metrics like tool trajectory matching, response quality, and LLM-based judgments.
 
 However, if you're iterating on your agents locally, you can point your agents to agentevals and you will see rich runtime information in your browser. For more details, use the bundled wheel and explore the Local Development option in the UI.
+
+**How does this compare to Bedrock AgentCore's evaluation?**
+AgentCore's evaluation integration (via `strands-agents-evals`) also couples agent execution with evaluation. Itre-invokes the agent for each test case, converts the resulting OTel spans to AWS's ADOT format, and scores them against 4 built-in evaluators (Helpfulness, Accuracy, Harmfulness, Relevance) via a cloud API call. This means you need an AWS account, valid credentials, and network access for every evaluation.
+
+agentevals takes a different approach: it scores pre-recorded traces locally without re-running anything. It works with standard Jaeger JSON and OTLP formats from any framework, supports open-ended metrics (tool trajectory matching, LLM-based judges, custom scorers), and ships with a CLI, web UI, and MCP server — no cloud dependency required; however we do include all ADK's GCP-based evals as of now.
