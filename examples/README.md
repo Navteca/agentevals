@@ -4,6 +4,45 @@ agentevals evaluates AI agents by consuming their [OpenTelemetry](https://opente
 
 This guide covers the instrumentation patterns agentevals supports, with a recommendation for new projects. Each example in this directory is a working agent you can run and modify.
 
+## SDK (Quick Start)
+
+The `AgentEvals` SDK wraps all OTel boilerplate into a single context manager. Use this for the simplest setup:
+
+```python
+from agentevals import AgentEvals
+
+app = AgentEvals()
+
+with app.session(eval_set_id="my-eval"):
+    # Your agent code here — any framework, unchanged
+    result = my_agent.invoke("Hello!")
+```
+
+Works with LangChain, Strands, Google ADK, and any OTel-instrumented agent. For frameworks that create their own `TracerProvider` (like Strands), pass it explicitly:
+
+```python
+telemetry = StrandsTelemetry()
+
+with app.session(eval_set_id="strands-eval", tracer_provider=telemetry.tracer_provider):
+    agent("Roll a die")
+```
+
+For simple prompt→response agents, there's also a decorator shorthand:
+
+```python
+app = AgentEvals(eval_set_id="my-eval")
+
+@app.agent
+def my_agent(prompt):
+    return llm.invoke(prompt).content
+
+app.run(["Hello!", "Tell me a joke"])
+```
+
+See [sdk_example/](./sdk_example/) for complete working examples.
+
+## Advanced: Manual OTel Setup
+
 > [!TIP]
 > **Prefer OTel GenAI semantic conventions** for new agents. They are framework-agnostic,
 > interoperable across observability tools, and benefit from the growing OTel ecosystem.
@@ -138,7 +177,12 @@ cd ui && npm run dev
 ### 3. Run an Example Agent
 
 ```bash
-# Pick one:
+# SDK examples (recommended starting point):
+python examples/sdk_example/context_manager_example.py
+python examples/sdk_example/decorator_example.py
+python examples/sdk_example/async_example.py
+
+# Manual OTel setup examples:
 python examples/dice_agent/main.py
 python examples/langchain_agent/main.py
 python examples/strands_agent/main.py

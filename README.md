@@ -7,6 +7,22 @@ The tool provides a CLI for local dev work, scripting and CI pipelines, a web UI
 > [!IMPORTANT]
 > This project is under active development. Expect breaking changes.
 
+## Instrument Your Agent in 3 Lines
+
+```python
+from agentevals import AgentEvals
+
+app = AgentEvals()
+
+with app.session(eval_set_id="my-eval"):
+    # your agent code — any framework, unchanged
+    agent.invoke("Roll a 20-sided die for me")
+```
+
+Wrap your agent code in `app.session()` and every LLM call, tool invocation, and response streams live to the agentevals UI. No OpenTelemetry setup, no WebSocket plumbing, no cleanup — the SDK handles all of it.
+
+Requires the `[streaming]` extra: `pip install "agentevals[streaming]"`. Works with LangChain, Strands, Google ADK, or anything that emits OTel spans. See [examples/sdk_example/](examples/sdk_example/) for framework-specific patterns.
+
 ## Installation
 
 Download a release wheel from the [releases page](../../releases). Two variants are available — both share the same filename but differ in contents:
@@ -40,8 +56,6 @@ uv sync
 
 # Using Nix (includes all dependencies)
 nix develop .
-
-
 ```
 
 Run a quick evaluation:
