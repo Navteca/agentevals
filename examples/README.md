@@ -1,12 +1,40 @@
 # Instrumenting Agents for agentevals
 
-agentevals evaluates AI agents by consuming their [OpenTelemetry](https://opentelemetry.io/) traces. Any agent that emits OTel spans can be evaluated — you just need a `TracerProvider` with the `AgentEvalsStreamingProcessor` registered.
+agentevals evaluates AI agents by consuming their [OpenTelemetry](https://opentelemetry.io/) traces. Any agent that emits OTel spans can be evaluated.
 
 This guide covers the instrumentation patterns agentevals supports, with a recommendation for new projects. Each example in this directory is a working agent you can run and modify.
 
-## SDK (Quick Start)
+## Zero-Code OTLP (Recommended)
 
-The `AgentEvals` SDK wraps all OTel boilerplate into a single context manager. Use this for the simplest setup:
+The simplest way to connect any agent to agentevals. Point your standard OTel OTLP exporter at the agentevals receiver and you're done. No agentevals dependency needed in your agent code.
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+export OTEL_RESOURCE_ATTRIBUTES="agentevals.session_name=my-agent,agentevals.eval_set_id=my-eval"
+python your_agent.py
+```
+
+The OTLP receiver runs on port 4318 (standard OTLP HTTP port) and accepts both `http/protobuf` and `http/json`. Sessions are auto-created from incoming traces and grouped by `agentevals.session_name`.
+
+| Example | Framework | LLM Provider |
+|---------|-----------|-------------|
+| [zero-code-examples/langchain/](./zero-code-examples/langchain/) | LangChain | OpenAI |
+| [zero-code-examples/strands/](./zero-code-examples/strands/) | Strands | OpenAI |
+
+This approach works with any framework that has OTel instrumentation: LangChain, Strands, Google ADK, LlamaIndex, Haystack, etc. If your framework already emits OTel spans, you only need to add `OTLPSpanExporter` (and `OTLPLogExporter` if it uses GenAI log-based content delivery).
+
+### Resource attributes
+
+| Attribute | Required | Description |
+|-----------|----------|-------------|
+| `agentevals.session_name` | no | Groups spans into a named session. Without it, sessions are named `otlp-<traceId prefix>`. |
+| `agentevals.eval_set_id` | no | Associates the session with an eval set for scoring. |
+
+Set them via `OTEL_RESOURCE_ATTRIBUTES` (env var) or `Resource.create()` in code.
+
+## SDK Integration
+
+For tighter control over session lifecycle, or if you prefer a Python API over environment variables, the `AgentEvals` SDK wraps all OTel boilerplate into a context manager:
 
 ```python
 from agentevals import AgentEvals
@@ -14,7 +42,6 @@ from agentevals import AgentEvals
 app = AgentEvals()
 
 with app.session(eval_set_id="my-eval"):
-    # Your agent code here — any framework, unchanged
     result = my_agent.invoke("Hello!")
 ```
 
@@ -27,7 +54,7 @@ with app.session(eval_set_id="strands-eval", tracer_provider=telemetry.tracer_pr
     agent("Roll a die")
 ```
 
-For simple prompt→response agents, there's also a decorator shorthand:
+For simple prompt-to-response agents, there's also a decorator shorthand:
 
 ```python
 app = AgentEvals(eval_set_id="my-eval")
@@ -39,43 +66,43 @@ def my_agent(prompt):
 app.run(["Hello!", "Tell me a joke"])
 ```
 
-To keep the SDK wired up in your code but skip streaming when the dev server isn't running, set `streaming=False`:
+To skip streaming when the dev server isn't running, set `streaming=False`:
 
 ```python
 app = AgentEvals(streaming=os.getenv("AGENTEVALS_STREAM", "1") == "1")
 ```
 
-When disabled, `session()` and `session_async()` become no-ops — your agent code runs normally without any WebSocket connection, OTel setup, or background threads.
+When disabled, `session()` and `session_async()` become no-ops and your agent runs normally without any WebSocket connection or OTel setup.
 
-See [sdk_example/](./sdk_example/) for complete working examples.
+Requires the `[streaming]` extra: `pip install "agentevals[streaming]"`. See [sdk_example/](./sdk_example/) for complete working examples.
 
-## Advanced: Manual OTel Setup
+## Supported Instrumentation Formats
 
-> [!TIP]
-> **Prefer OTel GenAI semantic conventions** for new agents. They are framework-agnostic,
-> interoperable across observability tools, and benefit from the growing OTel ecosystem.
+Trace format is **auto-detected**. Agents don't need to declare which format they use.
 
-## Supported Instrumentation Approaches
+- **OTel GenAI Semantic Conventions** (recommended for new agents). Standard `gen_ai.*` span attributes defined by the [OpenTelemetry GenAI working group](https://opentelemetry.io/docs/specs/semconv/gen-ai/). Framework-agnostic and interoperable. Works with LangChain, LlamaIndex, Haystack, Strands, and any framework that supports the conventions.
 
-agentevals supports two categories of trace instrumentation:
+- **Framework-Native OTel Tracing**. Some frameworks (like Google ADK) emit their own proprietary span attributes. agentevals has dedicated converters for these formats.
 
-- **OTel GenAI Semantic Conventions (recommended)** — Standard `gen_ai.*` span attributes defined by the [OpenTelemetry GenAI working group](https://opentelemetry.io/docs/specs/semconv/gen-ai/). Framework-agnostic and interoperable. Works with LangChain, LlamaIndex, Haystack, Strands, and any framework that supports the conventions.
-
-- **Framework-Native OTel Tracing** — Some frameworks (like Google ADK) emit their own proprietary span attributes. agentevals has dedicated converters for these formats.
-
-Trace format is **auto-detected** — agents don't need to declare which format they use. The detection checks for `gen_ai.request.model` / `gen_ai.input.messages` (GenAI semconv) or `otel.scope.name == "gcp.vertex.agent"` (ADK).
+Detection checks for `gen_ai.request.model` / `gen_ai.input.messages` (GenAI semconv) or `otel.scope.name == "gcp.vertex.agent"` (ADK).
 
 ## Example Agents
 
-| Example | Framework | LLM Provider | Instrumentation | Content Delivery | Key Env Vars |
-|---------|-----------|-------------|-----------------|-----------------|--------------|
-| [langchain_agent](./langchain_agent/) | LangChain | OpenAI | GenAI semconv (logs) | `LoggerProvider` logs | `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` |
-| [strands_agent](./strands_agent/) | Strands | OpenAI | GenAI semconv (events) | Span events (auto-promoted) | `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental` |
-| [dice_agent](./dice_agent/) | Google ADK | Gemini | ADK built-in | Span attributes (proprietary) | — |
+| Example | Framework | LLM Provider | Instrumentation | Content Delivery |
+|---------|-----------|-------------|-----------------|-----------------|
+| [zero-code-examples/langchain/](./zero-code-examples/langchain/) | LangChain | OpenAI | GenAI semconv (logs) | Standard OTLP export |
+| [zero-code-examples/strands/](./zero-code-examples/strands/) | Strands | OpenAI | GenAI semconv (events) | Standard OTLP export |
+| [langchain_agent](./langchain_agent/) | LangChain | OpenAI | GenAI semconv (logs) | SDK WebSocket |
+| [strands_agent](./strands_agent/) | Strands | OpenAI | GenAI semconv (events) | SDK WebSocket |
+| [dice_agent](./dice_agent/) | Google ADK | Gemini | ADK built-in | SDK WebSocket |
 
-All three examples implement the same toy agent (dice rolling + prime checking) so you can compare instrumentation patterns directly.
+The zero-code and SDK examples implement the same toy agent (dice rolling + prime checking) so you can compare the two approaches directly.
 
-## GenAI Semantic Convention Patterns
+## Advanced: GenAI Semantic Convention Patterns
+
+> [!TIP]
+> The sections below apply to the **SDK WebSocket** examples (`langchain_agent`, `strands_agent`, `dice_agent`).
+> For the zero-code OTLP examples, none of this manual wiring is needed.
 
 The OTel GenAI semantic conventions define _what_ data is captured (`gen_ai.request.model`, `gen_ai.input.messages`, `gen_ai.output.messages`, token counts, etc.) but allow flexibility in _how_ message content is delivered. agentevals supports both approaches:
 
@@ -100,7 +127,7 @@ logger_provider.add_log_record_processor(log_processor)
 OpenAIInstrumentor().instrument()  # auto-instruments the OpenAI SDK
 ```
 
-Without `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`, only metadata is captured — no conversation text will appear.
+Without `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`, only metadata is captured and no conversation text will appear.
 
 See [langchain_agent/README.md](./langchain_agent/README.md) for the full walkthrough.
 
@@ -108,7 +135,7 @@ See [langchain_agent/README.md](./langchain_agent/README.md) for the full walkth
 
 Used by frameworks that emit message content as **span events** rather than separate log records. The `AgentEvalsStreamingProcessor` automatically promotes `gen_ai.input.messages` and `gen_ai.output.messages` from event attributes to span attributes, so downstream processing sees a uniform shape.
 
-This pattern needs only a `TracerProvider` — no `LoggerProvider` or log processor:
+This pattern needs only a `TracerProvider`, no `LoggerProvider` or log processor:
 
 ```python
 os.environ["OTEL_SEMCONV_STABILITY_OPT_IN"] = "gen_ai_latest_experimental"
@@ -118,14 +145,12 @@ processor = AgentEvalsStreamingProcessor(ws_url=..., session_id=..., trace_id=..
 telemetry.tracer_provider.add_span_processor(processor)
 ```
 
-This is the simplest GenAI semconv integration — one provider, one processor, one env var.
-
 ### Which Pattern Should I Use?
 
 - **Check your framework/library docs first.** They will tell you whether message content is emitted as logs or span events.
 - If your instrumentation library requires a `LoggerProvider` (like `opentelemetry-instrumentation-openai-v2`), use the **logs-based** pattern.
-- If your framework emits GenAI span events (like Strands with `StrandsTelemetry`), use the **events-based** pattern — it's simpler.
-- If you're using **Google ADK**, skip GenAI semconv entirely — see the next section.
+- If your framework emits GenAI span events (like Strands with `StrandsTelemetry`), use the **events-based** pattern, it's simpler.
+- If you're using **Google ADK**, skip GenAI semconv entirely. See the next section.
 
 ## Framework-Native Tracing (Google ADK)
 
@@ -144,35 +169,12 @@ provider.add_span_processor(processor)
 
 See [dice_agent/README.md](./dice_agent/README.md) for a complete example.
 
-## Common Setup
-
-All examples share the same core pattern:
-
-1. **Create** (or obtain) a `TracerProvider`
-2. **Create** an `AgentEvalsStreamingProcessor` with WebSocket URL, session ID, and trace ID
-3. **Connect** to the dev server: `await processor.connect(eval_set_id=...)`
-4. **Register** the processor: `provider.add_span_processor(processor)`
-5. **Run** your agent normally — all OTel spans are streamed automatically
-6. **Shutdown**: `await processor.shutdown_async()`
-
-### Background Event Loop
-
-Both `langchain_agent` and `strands_agent` use a background thread for the async WebSocket connection since OTel span processors run synchronously:
-
-```python
-loop = asyncio.new_event_loop()
-thread = threading.Thread(target=lambda: (asyncio.set_event_loop(loop), loop.run_forever()), daemon=True)
-thread.start()
-
-# Use asyncio.run_coroutine_threadsafe(coro, loop) for async calls
-```
-
 ## Running the Examples
 
 ### 1. Start the Dev Server
 
 ```bash
-agentevals serve --dev --port 8001
+agentevals serve --dev
 ```
 
 ### 2. Start the UI (optional)
@@ -185,7 +187,11 @@ cd ui && npm run dev
 ### 3. Run an Example Agent
 
 ```bash
-# SDK examples (recommended starting point):
+# Zero-code OTLP (recommended):
+python examples/zero-code-examples/langchain/run.py
+python examples/zero-code-examples/strands/run.py
+
+# SDK examples:
 python examples/sdk_example/context_manager_example.py
 python examples/sdk_example/decorator_example.py
 python examples/sdk_example/async_example.py
@@ -199,8 +205,9 @@ python examples/strands_agent/main.py
 Traces stream to the dev server in real-time. Evaluation runs automatically when the session completes.
 
 See each example's README for prerequisites and detailed instructions:
-- [dice_agent/README.md](./dice_agent/README.md) — Google ADK + Gemini
-- [langchain_agent/README.md](./langchain_agent/README.md) — LangChain + OpenAI
-- [strands_agent/](./strands_agent/) — Strands + OpenAI
+- [zero-code-examples/](./zero-code-examples/) (LangChain + Strands, standard OTLP)
+- [dice_agent/README.md](./dice_agent/README.md) (Google ADK + Gemini)
+- [langchain_agent/README.md](./langchain_agent/README.md) (LangChain + OpenAI, SDK)
+- [strands_agent/](./strands_agent/) (Strands + OpenAI, SDK)
 
 For details on the WebSocket streaming protocol, see [docs/streaming.md](../docs/streaming.md).
