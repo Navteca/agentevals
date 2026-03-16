@@ -22,8 +22,8 @@ export const WelcomeView: React.FC = () => {
     <div css={containerStyle}>
       <div css={contentStyle}>
         <div css={headerStyle}>
-          <h1>agentevals</h1>
-          <p>Evaluate agent behavior from OpenTelemetry traces</p>
+          <img src="/logo.svg" alt="agentevals" css={logoStyle} />
+          <p>Evaluate any agents without changing a single line of code</p>
         </div>
 
         <div css={optionsGridStyle}>
@@ -72,22 +72,21 @@ const contentStyle = css`
 const headerStyle = css`
   text-align: center;
   margin-bottom: 48px;
-
-  h1 {
-    font-size: 3rem;
-    font-weight: 700;
-    margin: 0 0 16px 0;
-    background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-purple) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 
   p {
     font-size: 1.125rem;
     color: var(--text-secondary);
     margin: 0;
   }
+`;
+
+const logoStyle = css`
+  width: 420px;
+  height: auto;
+  margin-bottom: 16px;
 `;
 
 const optionsGridStyle = css`

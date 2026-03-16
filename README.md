@@ -1,4 +1,6 @@
-<h1 align="center">agentevals</h1>
+<p align="center">
+  <img src="docs/assets/logo-color.png" alt="agentevals" width="420" />
+</p>
 
 `agentevals` scores agent behavior from OpenTelemetry traces without re-running the agent. It parses OTLP streams and Jaeger JSON traces, then evaluates them against golden eval sets using ADK's evaluation framework.
 

@@ -47,7 +47,7 @@ export const Sidebar: React.FC = () => {
     <>
       <nav css={sidebarStyle}>
         <div css={brandStyle} onClick={() => actions.setCurrentView('welcome')}>
-          agentevals
+          <img src="/logo.svg" alt="agentevals" css={brandLogoStyle} />
         </div>
 
         <div css={navListStyle}>
@@ -135,17 +135,16 @@ const sidebarStyle = css`
 `;
 
 const brandStyle = css`
-  padding: 0 20px 20px;
+  padding: 0 16px 16px;
   border-bottom: 1px solid var(--border-default);
   margin-bottom: 12px;
-  font-size: 1.125rem;
-  font-weight: 700;
-  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-purple) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
   cursor: pointer;
-  letter-spacing: -0.01em;
+`;
+
+const brandLogoStyle = css`
+  display: block;
+  width: 160px;
+  height: auto;
 `;
 
 const navListStyle = css`
