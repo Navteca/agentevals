@@ -18,6 +18,12 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, Request, Response
 
 from ..extraction import flatten_otlp_attributes
+from ..trace_attrs import (
+    OTEL_GENAI_INPUT_MESSAGES,
+    OTEL_GENAI_OUTPUT_MESSAGES,
+    OTEL_SCOPE,
+    OTEL_SCOPE_VERSION,
+)
 
 try:
     from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
@@ -228,7 +234,7 @@ async def _process_logs(body: dict) -> None:
         _trace_manager.schedule_log_reextraction(session_id)
 
 
-_GENAI_EVENT_KEYS = {"gen_ai.input.messages", "gen_ai.output.messages"}
+_GENAI_EVENT_KEYS = {OTEL_GENAI_INPUT_MESSAGES, OTEL_GENAI_OUTPUT_MESSAGES}
 
 
 def _normalize_span(
@@ -249,14 +255,14 @@ def _normalize_span(
 
     existing_keys = {a.get("key") for a in attrs}
 
-    if scope_name and "otel.scope.name" not in existing_keys:
-        attrs.append({"key": "otel.scope.name", "value": {"stringValue": scope_name}})
-        existing_keys.add("otel.scope.name")
-    if scope_version and "otel.scope.version" not in existing_keys:
+    if scope_name and OTEL_SCOPE not in existing_keys:
+        attrs.append({"key": OTEL_SCOPE, "value": {"stringValue": scope_name}})
+        existing_keys.add(OTEL_SCOPE)
+    if scope_version and OTEL_SCOPE_VERSION not in existing_keys:
         attrs.append(
-            {"key": "otel.scope.version", "value": {"stringValue": scope_version}}
+            {"key": OTEL_SCOPE_VERSION, "value": {"stringValue": scope_version}}
         )
-        existing_keys.add("otel.scope.version")
+        existing_keys.add(OTEL_SCOPE_VERSION)
 
     for event in span.get("events", []):
         for attr in event.get("attributes", []):

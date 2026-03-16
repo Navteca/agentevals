@@ -273,14 +273,18 @@ def _deduplicate_invocations(invocations: list[Invocation]) -> list[Invocation]:
         return ""
 
     seen: dict[str, int] = {}
+    always_keep: set[int] = set()
     for i, inv in enumerate(invocations):
         text = _user_text(inv)
-        seen[text] = i
+        if not text.strip():
+            always_keep.add(i)
+        else:
+            seen[text] = i
 
-    if len(seen) == len(invocations):
+    if len(seen) + len(always_keep) == len(invocations):
         return invocations
 
-    keep = set(seen.values())
+    keep = always_keep | set(seen.values())
     return [inv for i, inv in enumerate(invocations) if i in keep]
 
 

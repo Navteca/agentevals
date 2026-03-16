@@ -100,11 +100,8 @@ def _inject_messages(
 ) -> dict:
     """Create a copy of *span* with message attributes injected."""
     span_copy = span.copy()
-
-    if "attributes" not in span_copy:
-        span_copy["attributes"] = []
-
-    attrs = span_copy["attributes"]
+    attrs = list(span_copy.get("attributes", []))
+    span_copy["attributes"] = attrs
 
     if input_messages:
         attrs.append({
@@ -148,12 +145,12 @@ def _enrich_per_span(
         else:
             span_copy = span.copy()
             if session_id:
-                if "attributes" not in span_copy:
-                    span_copy["attributes"] = []
-                span_copy["attributes"].append({
+                attrs = list(span_copy.get("attributes", []))
+                attrs.append({
                     "key": OTEL_GENAI_AGENT_NAME,
                     "value": {"stringValue": session_id},
                 })
+                span_copy["attributes"] = attrs
             enriched.append(span_copy)
 
     matched = sum(1 for sid in logs_by_span if any(s.get("spanId") == sid for s in spans))

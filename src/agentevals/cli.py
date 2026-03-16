@@ -239,9 +239,7 @@ def serve(dev: bool, host: str, port: int, otlp_port: int, eval_sets: str | None
     static_dir = Path(__file__).parent / "_static"
     has_ui = static_dir.is_dir() and (static_dir / "index.html").exists()
 
-    live_mode = dev or (has_ui and not headless)
-    if live_mode:
-        os.environ["AGENTEVALS_LIVE"] = "1"
+    os.environ["AGENTEVALS_LIVE"] = "1"
 
     if dev:
         click.echo(f"agentevals dev server starting...")
@@ -310,15 +308,31 @@ def serve(dev: bool, host: str, port: int, otlp_port: int, eval_sets: str | None
 
         asyncio.run(_run_ui_servers())
     else:
-        click.echo(f"agentevals API: http://{host}:{port}/api")
+        click.echo(f"agentevals API:  http://{host}:{port}/api")
+        click.echo(f"  OTLP HTTP: http://{host}:{otlp_port}")
         click.echo()
-        uvicorn.run(
-            "agentevals.api.app:app",
-            host=host,
-            port=port,
-            reload=False,
-            log_level="warning",
-        )
+
+        async def _run_headless_servers():
+            main_config = uvicorn.Config(
+                "agentevals.api.app:app",
+                host=host,
+                port=port,
+                reload=False,
+                log_level="warning",
+            )
+            otlp_config = uvicorn.Config(
+                "agentevals.api.otlp_app:otlp_app",
+                host=host,
+                port=otlp_port,
+                reload=False,
+                log_level="warning",
+            )
+            main_server = uvicorn.Server(main_config)
+            otlp_server = uvicorn.Server(otlp_config)
+            _link_server_shutdown(main_server, otlp_server)
+            await asyncio.gather(main_server.serve(), otlp_server.serve())
+
+        asyncio.run(_run_headless_servers())
 
 
 @main.command("mcp")

@@ -6,6 +6,7 @@ extraction, streaming, and runner modules.
 
 # OTel scope
 OTEL_SCOPE = "otel.scope.name"
+OTEL_SCOPE_VERSION = "otel.scope.version"
 
 # Google ADK scope value
 ADK_SCOPE_VALUE = "gcp.vertex.agent"

@@ -113,8 +113,9 @@ class StreamingTraceManager:
             del self.sessions[session_id]
             if session_id in self.incremental_extractors:
                 del self.incremental_extractors[session_id]
-            if session_id in self._completion_timers:
-                self._completion_timers.pop(session_id).cancel()
+            for key in (session_id, f"_reextract_{session_id}"):
+                if key in self._completion_timers:
+                    self._completion_timers.pop(key).cancel()
             if session_id in self._idle_timers:
                 self._idle_timers.pop(session_id).cancel()
             logger.debug("Removed old session: %s", session_id)

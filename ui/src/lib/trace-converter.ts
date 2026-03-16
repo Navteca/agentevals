@@ -430,13 +430,19 @@ function deduplicateInvocations(invocations: Invocation[]): Invocation[] {
       .join(' ');
 
   const seen = new Map<string, number>();
+  const alwaysKeep = new Set<number>();
   invocations.forEach((inv, i) => {
-    seen.set(getUserText(inv), i);
+    const text = getUserText(inv);
+    if (!text.trim()) {
+      alwaysKeep.add(i);
+    } else {
+      seen.set(text, i);
+    }
   });
 
-  if (seen.size === invocations.length) return invocations;
+  if (seen.size + alwaysKeep.size === invocations.length) return invocations;
 
-  const keep = new Set(seen.values());
+  const keep = new Set([...alwaysKeep, ...seen.values()]);
   return invocations.filter((_, i) => keep.has(i));
 }
 

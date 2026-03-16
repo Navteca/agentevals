@@ -7,6 +7,12 @@ import logging
 from typing import Any
 
 from .base import Span, Trace, TraceLoader
+from ..trace_attrs import (
+    OTEL_GENAI_INPUT_MESSAGES,
+    OTEL_GENAI_OUTPUT_MESSAGES,
+    OTEL_SCOPE,
+    OTEL_SCOPE_VERSION,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +86,7 @@ class OtlpJsonLoader(TraceLoader):
         ]
         return self._build_traces(all_spans)
 
-    _GENAI_EVENT_KEYS = {"gen_ai.input.messages", "gen_ai.output.messages"}
+    _GENAI_EVENT_KEYS = {OTEL_GENAI_INPUT_MESSAGES, OTEL_GENAI_OUTPUT_MESSAGES}
 
     def _parse_span(
         self,
@@ -93,9 +99,9 @@ class OtlpJsonLoader(TraceLoader):
         attributes = self._extract_attributes(span_data.get("attributes", []))
 
         if scope_name:
-            attributes["otel.scope.name"] = scope_name
+            attributes[OTEL_SCOPE] = scope_name
         if scope_version:
-            attributes["otel.scope.version"] = scope_version
+            attributes[OTEL_SCOPE_VERSION] = scope_version
 
         self._promote_genai_event_attributes(span_data, attributes)
 
