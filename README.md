@@ -121,6 +121,18 @@ cd ui && npm install && npm run dev             # Terminal 2 → http://localhos
 
 Upload traces and eval sets, select metrics, and view results with interactive span trees. Live-streamed traces appear in the "Local Dev" tab, grouped by session ID.
 
+## REST API Reference
+
+While the server is running, interactive API documentation is available at:
+
+| Endpoint | Description |
+|----------|-------------|
+| [`/docs`](http://localhost:8001/docs) | Swagger UI with interactive request builder |
+| [`/redoc`](http://localhost:8001/redoc) | ReDoc reference documentation |
+| [`/openapi.json`](http://localhost:8001/openapi.json) | Raw OpenAPI 3.x schema (for code generation or CI) |
+
+The OTLP receiver (port 4318) serves its own docs at `http://localhost:4318/docs`.
+
 ## MCP Server
 
 Exposes evaluation tools to MCP clients. A `.mcp.json` at the project root lets Claude Code pick it up automatically.
