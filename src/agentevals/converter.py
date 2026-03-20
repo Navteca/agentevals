@@ -2,7 +2,7 @@
 
 Supports two trace formats:
 1. ADK format (gcp.vertex.agent scope with ADK-specific attributes)
-2. GenAI semantic conventions (standard gen_ai.* attributes from LangChain, LlamaIndex, etc.)
+2. GenAI semantic conventions (standard gen_ai.* attributes from LangChain, Strands, etc.)
 
 Automatically detects the format and routes to the appropriate converter.
 Format detection checks span attributes and falls back to checking all spans if needed.

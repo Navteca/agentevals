@@ -10,7 +10,7 @@ A LangChain agent with:
 - Real-time trace streaming to agentevals dev server
 - Live conversation display and evaluation
 
-**Framework-Agnostic:** Uses standard OpenTelemetry GenAI semantic conventions that work with any framework (LangChain, LlamaIndex, Haystack, etc.).
+**Framework-Agnostic:** Uses standard OpenTelemetry GenAI semantic conventions that work with any framework (LangChain, Strands, etc.).
 
 ## Quick Start
 
@@ -225,7 +225,6 @@ response = llm.invoke(...)
 
 This pattern works with any framework using GenAI semantic conventions:
 
-- **LlamaIndex** - Enable OTEL, use same processors
-- **Haystack** - Enable OTEL instrumentation
+- **Strands** - Uses span events for message content
 - **Custom agents** - Use `opentelemetry-instrumentation-openai-v2`
 

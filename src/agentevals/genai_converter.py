@@ -2,8 +2,6 @@
 
 Supports traces from frameworks using OpenTelemetry GenAI semantic conventions:
 - LangChain (via LANGSMITH_OTEL_ENABLED)
-- LlamaIndex
-- Haystack
 - Any framework using standard gen_ai.* attributes
 """
 

@@ -21,7 +21,7 @@ The OTLP receiver runs on port 4318 (standard OTLP HTTP port) and accepts both `
 | [zero-code-examples/langchain/](./zero-code-examples/langchain/) | LangChain | OpenAI |
 | [zero-code-examples/strands/](./zero-code-examples/strands/) | Strands | OpenAI |
 
-This approach works with any framework that has OTel instrumentation: LangChain, Strands, Google ADK, LlamaIndex, Haystack, etc. If your framework already emits OTel spans, you only need to add `OTLPSpanExporter` (and `OTLPLogExporter` if it uses GenAI log-based content delivery).
+This approach works with any framework that has OTel instrumentation: LangChain, Strands, Google ADK, etc. If your framework already emits OTel spans, you only need to add `OTLPSpanExporter` (and `OTLPLogExporter` if it uses GenAI log-based content delivery).
 
 ### Resource attributes
 
@@ -80,7 +80,7 @@ Requires the `[streaming]` extra: `pip install "agentevals[streaming]"`. See [sd
 
 Trace format is **auto-detected**. Agents don't need to declare which format they use.
 
-- **OTel GenAI Semantic Conventions** (recommended for new agents). Standard `gen_ai.*` span attributes defined by the [OpenTelemetry GenAI working group](https://opentelemetry.io/docs/specs/semconv/gen-ai/). Framework-agnostic and interoperable. Works with LangChain, LlamaIndex, Haystack, Strands, and any framework that supports the conventions.
+- **OTel GenAI Semantic Conventions** (recommended for new agents). Standard `gen_ai.*` span attributes defined by the [OpenTelemetry GenAI working group](https://opentelemetry.io/docs/specs/semconv/gen-ai/). Framework-agnostic and interoperable. Works with LangChain, Strands, and any framework that supports the conventions.
 
 - **Framework-Native OTel Tracing**. Some frameworks (like Google ADK) emit their own proprietary span attributes. agentevals has dedicated converters for these formats.
 
