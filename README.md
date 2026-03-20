@@ -104,6 +104,34 @@ uv run agentevals run samples/helm.json \
   --output json
 ```
 
+## Custom Evaluators
+
+Beyond the built-in metrics, you can write your own evaluators in Python, JavaScript, or any language. An evaluator is any program that reads JSON from stdin and writes a score to stdout.
+
+```bash
+agentevals evaluator init my_evaluator
+```
+
+This scaffolds a directory with boilerplate and a manifest. Implement your scoring logic, then reference it in an eval config:
+
+```yaml
+# eval_config.yaml
+evaluators:
+  - name: tool_trajectory_avg_score
+    type: builtin
+
+  - name: my_evaluator
+    type: code
+    path: ./evaluators/my_evaluator.py
+    threshold: 0.7
+```
+
+```bash
+agentevals run trace.json --config eval_config.yaml --eval-set eval_set.json
+```
+
+Community evaluators can be referenced directly from a shared GitHub repository using `type: remote`. See the [Custom Evaluators guide](docs/custom-evaluators.md) for the full protocol reference, SDK usage, and how to contribute evaluators.
+
 ## Web UI
 
 **Installed bundle** (port 8001):
@@ -160,6 +188,14 @@ Two slash-command workflows in `.claude/skills/`, available automatically in thi
 |-------|-------------|
 | `/eval` | Score traces or compare sessions against a golden reference |
 | `/inspect` | Turn-by-turn narrative of a live session with anomaly detection |
+
+## Docs
+
+| Guide | Description |
+|-------|-------------|
+| [Eval Set Format](docs/eval-set-format.md) | Schema, field reference, and examples for golden eval set JSON files |
+| [Custom Evaluators](docs/custom-evaluators.md) | Write your own scoring logic in Python, JavaScript, or any language |
+| [OpenTelemetry Compatibility](docs/otel-compatibility.md) | Supported OTel conventions, message delivery mechanisms, and OTLP receiver |
 
 ## Development
 
