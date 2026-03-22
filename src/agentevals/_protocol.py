@@ -14,6 +14,7 @@ Protocol versioning rules:
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
@@ -62,13 +63,21 @@ class EvalInput(BaseModel):
     expected_invocations: Optional[list[InvocationData]] = None
 
 
+class EvalStatus(str, Enum):
+    """Allowed ``status`` values on the evaluator JSON wire format (matches evaluator-sdk)."""
+
+    PASSED = "PASSED"
+    FAILED = "FAILED"
+    NOT_EVALUATED = "NOT_EVALUATED"
+
+
 class EvalResult(BaseModel):
     """Output payload expected from a custom evaluator on stdout."""
 
     score: float = Field(ge=0.0, le=1.0)
-    status: Optional[str] = Field(
+    status: Optional[EvalStatus] = Field(
         default=None,
-        description='One of "PASSED", "FAILED", "NOT_EVALUATED". Derived from score vs threshold if omitted.',
+        description="Derived from score vs threshold if omitted.",
     )
     per_invocation_scores: list[Optional[float]] = Field(default_factory=list)
     details: Optional[dict[str, Any]] = None
