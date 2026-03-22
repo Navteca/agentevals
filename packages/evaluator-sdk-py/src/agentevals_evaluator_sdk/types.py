@@ -71,6 +71,7 @@ class EvalStatus(str, Enum):
     FAILED = "FAILED"
     NOT_EVALUATED = "NOT_EVALUATED"
 
+
 class EvalResult(BaseModel):
     """Output payload expected from a custom evaluator script/container on stdout."""
 
