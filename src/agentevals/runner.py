@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -39,6 +40,7 @@ class MetricResult(BaseModel):
     per_invocation_scores: list[float | None] = Field(default_factory=list)
     error: str | None = None
     details: dict[str, Any] | None = None
+    duration_ms: float | None = None
 
 
 class TraceResult(BaseModel):
@@ -234,6 +236,7 @@ async def _evaluate_trace(
         async with eval_semaphore:
             if progress_callback:
                 await progress_callback(f"Running {metric_name}...")
+            t0 = time.monotonic()
             result = await evaluate_builtin_metric(
                 metric_name=metric_name,
                 actual_invocations=actual_invocations,
@@ -241,6 +244,7 @@ async def _evaluate_trace(
                 judge_model=judge_model,
                 threshold=threshold,
             )
+            result.duration_ms = (time.monotonic() - t0) * 1000
         return await _append_result(result)
 
     async def _eval_custom_with_semaphore(evaluator_def: CustomEvaluatorDef) -> MetricResult:
@@ -249,11 +253,13 @@ async def _evaluate_trace(
                 await progress_callback(f"Running {evaluator_def.name}...")
             from .custom_evaluators import evaluate_custom_evaluator
 
+            t0 = time.monotonic()
             result = await evaluate_custom_evaluator(
                 evaluator_def=evaluator_def,
                 actual_invocations=actual_invocations,
                 expected_invocations=expected_invocations,
             )
+            result.duration_ms = (time.monotonic() - t0) * 1000
         return await _append_result(result)
 
     tasks = [_eval_builtin_with_semaphore(m) for m in metrics]

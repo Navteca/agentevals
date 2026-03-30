@@ -39,6 +39,8 @@ class TestRunner:
         assert mr.score == 1.0
         assert mr.eval_status == "PASSED"
         assert mr.error is None
+        assert mr.duration_ms is not None
+        assert mr.duration_ms >= 0
 
     def test_missing_eval_set_error(self):
         """Trajectory metric without eval set should report a clear error."""
@@ -51,6 +53,8 @@ class TestRunner:
         mr = result.trace_results[0].metric_results[0]
         assert mr.error is not None
         assert "requires expected invocations" in mr.error
+        assert mr.duration_ms is not None
+        assert mr.duration_ms >= 0
 
     def test_bad_trace_file(self):
         config = EvalRunConfig(

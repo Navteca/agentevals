@@ -8,6 +8,20 @@ from typing import Any
 from .runner import MetricResult, RunResult
 
 
+def _format_duration(ms: float | None) -> str:
+    if ms is None:
+        return ""
+    ms = round(ms)
+    if ms < 1000:
+        return f"{ms}ms"
+    seconds = ms / 1000
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    total_secs = round(seconds)
+    minutes, secs = divmod(total_secs, 60)
+    return f"{minutes}m {secs}s"
+
+
 def format_results(run_result: RunResult, fmt: str = "table") -> str:
     if fmt == "json":
         return _format_json(run_result)
@@ -56,6 +70,7 @@ def _format_table(run_result: RunResult) -> str:
                     score_str,
                     mr.eval_status,
                     per_inv,
+                    _format_duration(mr.duration_ms),
                     error_str,
                 ]
             )
@@ -63,7 +78,7 @@ def _format_table(run_result: RunResult) -> str:
         if rows:
             table = tabulate(
                 rows,
-                headers=["", "Metric", "Score", "Status", "Per-Invocation", "Error"],
+                headers=["", "Metric", "Score", "Status", "Per-Invocation", "Time", "Error"],
                 tablefmt="simple",
             )
             lines.append(table)
@@ -131,6 +146,7 @@ def _format_json(run_result: RunResult) -> str:
                 "score": mr.score,
                 "eval_status": mr.eval_status,
                 "per_invocation_scores": mr.per_invocation_scores,
+                "duration_ms": mr.duration_ms,
                 "error": mr.error,
             }
             if mr.details:
@@ -159,12 +175,13 @@ def _format_summary(run_result: RunResult) -> str:
         lines.append(f"Trace {tr.trace_id} ({tr.num_invocations} invocations):")
         for mr in tr.metric_results:
             icon = _status_icon(mr.eval_status)
+            duration_suffix = f" [{_format_duration(mr.duration_ms)}]" if mr.duration_ms is not None else ""
             if mr.error:
-                lines.append(f"  {icon} {mr.metric_name}: ERROR - {mr.error}")
+                lines.append(f"  {icon} {mr.metric_name}: ERROR - {mr.error}{duration_suffix}")
             elif mr.score is not None:
-                lines.append(f"  {icon} {mr.metric_name}: {mr.score:.4f} ({mr.eval_status})")
+                lines.append(f"  {icon} {mr.metric_name}: {mr.score:.4f} ({mr.eval_status}){duration_suffix}")
             else:
-                lines.append(f"  {icon} {mr.metric_name}: N/A ({mr.eval_status})")
+                lines.append(f"  {icon} {mr.metric_name}: N/A ({mr.eval_status}){duration_suffix}")
         lines.append("")
 
     return "\n".join(lines)
