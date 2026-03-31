@@ -20,6 +20,8 @@ from google.genai import types as genai_types
 
 from .extraction import (
     extract_agent_response_from_attrs,
+    extract_tool_call_from_span,
+    extract_tool_result_from_span,
     extract_user_text_from_attrs,
     get_extractor,
     parse_json,
@@ -30,11 +32,7 @@ from .trace_attrs import (
     ADK_LLM_REQUEST,
     ADK_LLM_RESPONSE,
     ADK_SCOPE_VALUE,
-    ADK_TOOL_CALL_ARGS,
-    ADK_TOOL_RESPONSE,
     OTEL_GENAI_AGENT_NAME,
-    OTEL_GENAI_TOOL_CALL_ID,
-    OTEL_GENAI_TOOL_NAME,
     OTEL_SCOPE,
 )
 
@@ -223,37 +221,24 @@ def _extract_tool_trajectory(
 def _extract_from_tool_span(
     tool_span: Span,
 ) -> tuple[genai_types.FunctionCall | None, genai_types.FunctionResponse | None]:
-    tool_name = tool_span.get_tag(OTEL_GENAI_TOOL_NAME)
-    tool_call_id = tool_span.get_tag(OTEL_GENAI_TOOL_CALL_ID)
-
-    if not tool_name:
-        # Fallback: parse tool name from operationName "execute_tool <name>"
-        op = tool_span.operation_name
-        if op.startswith("execute_tool "):
-            tool_name = op[len("execute_tool ") :]
-        else:
-            logger.warning("execute_tool span %s: no tool name found", tool_span.span_id)
-            return None, None
-
-    args_raw = tool_span.get_tag(ADK_TOOL_CALL_ARGS, "{}")
-    args = parse_json(args_raw)
+    tool_call = extract_tool_call_from_span(tool_span)
+    if tool_call is None:
+        logger.warning("execute_tool span %s: no tool name found", tool_span.span_id)
+        return None, None
 
     fc = genai_types.FunctionCall(
-        name=tool_name,
-        args=args if args else {},
-        id=tool_call_id,
+        name=tool_call["name"],
+        args=tool_call["args"],
+        id=tool_call["id"],
     )
 
-    response_raw = tool_span.get_tag(ADK_TOOL_RESPONSE)
+    tool_result = extract_tool_result_from_span(tool_span)
     fr = None
-    if response_raw:
-        response_data = parse_json(response_raw)
-        # Response format varies: MCP uses {"content": [...], "isError": false},
-        # other tools return flat dicts. We pass through as-is.
+    if tool_result:
         fr = genai_types.FunctionResponse(
-            name=tool_name,
-            response=response_data if response_data else {},
-            id=tool_call_id,
+            name=tool_call["name"],
+            response=tool_result["response"],
+            id=tool_call["id"],
         )
 
     return fc, fr

@@ -17,25 +17,21 @@ from .converter import ConversionResult
 from .extraction import (
     GenAIExtractor,
     extract_agent_response_from_attrs,
+    extract_tool_call_from_span,
+    extract_tool_result_from_span,
     extract_user_text_from_attrs,
     is_invocation_span,
     is_llm_span,
-    parse_tool_response_content,
 )
 from .loader.base import Span, Trace
 from .trace_attrs import (
     OTEL_GENAI_INPUT_MESSAGES,
     OTEL_GENAI_OUTPUT_MESSAGES,
-    OTEL_GENAI_TOOL_CALL_ARGUMENTS,
-    OTEL_GENAI_TOOL_CALL_ID,
-    OTEL_GENAI_TOOL_CALL_RESULT,
-    OTEL_GENAI_TOOL_NAME,
 )
 from .utils.genai_messages import (
     ASSISTANT_ROLES,
     USER_ROLES,
     extract_text_from_message,
-    extract_tool_call_args_from_messages,
     extract_tool_calls_from_message,
     parse_json_attr,
 )
@@ -385,68 +381,33 @@ def _extract_tool_calls(
     tool_responses: list[_ToolResponse] = []
 
     for tool_span in tool_spans:
-        tool_name = tool_span.get_tag(OTEL_GENAI_TOOL_NAME)
-        if not tool_name:
-            logger.warning(f"Tool span missing gen_ai.tool.name: {tool_span.operation_name}")
+        tool_call = extract_tool_call_from_span(tool_span)
+        if tool_call is None:
+            logger.warning(f"Tool span missing tool name: {tool_span.operation_name}")
             continue
 
-        tool_call_id = tool_span.get_tag(OTEL_GENAI_TOOL_CALL_ID)
+        # The shared function returns span_id or "unknown" as fallback IDs.
+        # For dedup against LLM-message tool calls, only real IDs are usable.
+        tc_id = tool_call["id"]
+        is_placeholder = tc_id in ("unknown", tool_span.span_id)
+        dedup_id = None if is_placeholder else tc_id
 
-        args_raw = tool_span.get_tag(OTEL_GENAI_TOOL_CALL_ARGUMENTS, "{}")
-        args = parse_json_attr(args_raw, "gen_ai.tool.call.arguments")
-        if not isinstance(args, dict):
-            args = {}
-
-        if not args:
-            input_msgs_raw = tool_span.get_tag(OTEL_GENAI_INPUT_MESSAGES)
-            if input_msgs_raw:
-                args, _ = extract_tool_call_args_from_messages(input_msgs_raw, tool_name)
-
-        tc = _ToolCall(name=tool_name, args=args, id=tool_call_id)
-        if tool_call_id:
-            tool_calls_by_id[tool_call_id] = tc
+        tc = _ToolCall(name=tool_call["name"], args=tool_call["args"], id=dedup_id)
+        if dedup_id:
+            tool_calls_by_id[dedup_id] = tc
         else:
             tool_calls_no_id.append(tc)
 
-        result_raw = tool_span.get_tag(OTEL_GENAI_TOOL_CALL_RESULT)
-        if result_raw:
-            result_data = parse_tool_response_content(result_raw)
-            logger.debug(f"Tool {tool_name} result: {str(result_data)[:100]}")
+        tool_result = extract_tool_result_from_span(tool_span)
+        if tool_result:
+            logger.debug(f"Tool {tool_call['name']} result: {str(tool_result['response'])[:100]}")
             tool_responses.append(
                 _ToolResponse(
-                    name=tool_name,
-                    response=result_data,
-                    id=tool_call_id,
+                    name=tool_call["name"],
+                    response=tool_result["response"],
+                    id=dedup_id,
                 )
             )
-        else:
-            output_msgs_raw = tool_span.get_tag(OTEL_GENAI_OUTPUT_MESSAGES)
-            if output_msgs_raw:
-                output_msgs = parse_json_attr(output_msgs_raw, "gen_ai.output.messages")
-                if isinstance(output_msgs, list):
-                    for msg in output_msgs:
-                        if not isinstance(msg, dict):
-                            continue
-                        for part in msg.get("parts", []):
-                            if not isinstance(part, dict):
-                                continue
-                            if part.get("type") == "tool_call_response" and "response" in part:
-                                resp = part["response"]
-                                if isinstance(resp, list):
-                                    texts = [t.get("text", "") for t in resp if isinstance(t, dict) and "text" in t]
-                                    result_data = parse_tool_response_content(" ".join(texts))
-                                elif isinstance(resp, dict):
-                                    result_data = resp
-                                else:
-                                    result_data = {"result": str(resp)}
-                                tool_responses.append(
-                                    _ToolResponse(
-                                        name=tool_name,
-                                        response=result_data,
-                                        id=tool_call_id,
-                                    )
-                                )
-                                break
 
     if llm_spans:
         for llm_span in llm_spans:

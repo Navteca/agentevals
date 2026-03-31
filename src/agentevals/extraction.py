@@ -207,7 +207,7 @@ def extract_tool_result_from_attrs(attrs: dict[str, Any]) -> dict[str, Any] | No
 
     if raw:
         parsed = parse_tool_response_content(raw)
-        if parsed:
+        if isinstance(parsed, dict):
             is_error = bool(parsed.get("isError", False))
             return {"response": parsed, "isError": is_error}
 
@@ -233,6 +233,29 @@ def extract_tool_result_from_attrs(attrs: dict[str, Any]) -> dict[str, Any] | No
                         return {"response": parsed, "isError": bool(parsed.get("isError", False))}
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# Span-level convenience wrappers
+# ---------------------------------------------------------------------------
+
+
+def extract_tool_call_from_span(span: Span) -> dict[str, Any] | None:
+    """Extract tool call info from a Span object.
+
+    Delegates to extract_tool_call_from_attrs using the span's tags, operation
+    name, and span ID.  Returns {"id", "name", "args"} or None.
+    """
+    return extract_tool_call_from_attrs(span.tags, span.operation_name, span.span_id)
+
+
+def extract_tool_result_from_span(span: Span) -> dict[str, Any] | None:
+    """Extract tool result from a Span object.
+
+    Delegates to extract_tool_result_from_attrs using the span's tags.
+    Returns {"response": dict, "isError": bool} or None.
+    """
+    return extract_tool_result_from_attrs(span.tags)
 
 
 # ---------------------------------------------------------------------------
