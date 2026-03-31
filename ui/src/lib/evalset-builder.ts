@@ -1,51 +1,25 @@
-import type { Trace, EvalSet, EvalCase } from './types';
-import { convertTracesToInvocations } from './trace-converter';
+import type { Invocation, EvalSet, EvalCase } from './types';
+import { convertCamelToSnake } from './utils';
 
 /**
- * Convert camelCase keys to snake_case recursively
+ * Generate an EvalSet from pre-converted invocations (backend is source of truth).
  */
-function convertCamelToSnake(obj: any): any {
-  if (Array.isArray(obj)) {
-    return obj.map(convertCamelToSnake);
-  }
-
-  if (obj !== null && typeof obj === 'object') {
-    const converted: any = {};
-    for (const [key, value] of Object.entries(obj)) {
-      const snakeKey = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
-      converted[snakeKey] = convertCamelToSnake(value);
-    }
-    return converted;
-  }
-
-  return obj;
-}
-
-/**
- * Generate an EvalSet from selected traces
- *
- * @param traces - Array of traces to convert to eval set
- * @param baseFilename - Base filename for naming the eval set
- * @returns Complete EvalSet object with auto-generated metadata
- */
-export function generateEvalSetFromTraces(
-  traces: Trace[],
+export function generateEvalSet(
+  invocationsByTrace: Array<{ traceId: string; invocations: Invocation[] }>,
   baseFilename: string
 ): EvalSet {
   const timestamp = new Date().toISOString().split('T')[0];
   const cleanFilename = baseFilename.replace(/\.json$/i, '').replace(/[^a-z0-9_]/gi, '_');
   const evalSetId = `evalset_${cleanFilename}_${timestamp}`;
 
-  const conversionResults = convertTracesToInvocations(traces);
   const evalCases: EvalCase[] = [];
 
-  for (const trace of traces) {
-    const result = conversionResults.get(trace.traceId);
-    if (!result || result.invocations.length === 0) continue;
+  for (const { traceId, invocations } of invocationsByTrace) {
+    if (invocations.length === 0) continue;
 
-    result.invocations.forEach((invocation, idx) => {
+    invocations.forEach((invocation, idx) => {
       evalCases.push({
-        eval_id: `${trace.traceId.substring(0, 8)}_case_${idx + 1}`,
+        eval_id: `${traceId.substring(0, 8)}_case_${idx + 1}`,
         conversation: [invocation],
       });
     });
@@ -54,7 +28,7 @@ export function generateEvalSetFromTraces(
   return {
     eval_set_id: evalSetId,
     name: `Eval Set for ${baseFilename}`,
-    description: `Generated from ${traces.length} trace(s) on ${new Date().toLocaleString()}`,
+    description: `Generated from ${invocationsByTrace.length} trace(s) on ${new Date().toLocaleString()}`,
     eval_cases: evalCases,
   };
 }
