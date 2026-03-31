@@ -100,7 +100,7 @@ def extract_agent_response_from_attrs(attrs: dict[str, Any]) -> str | None:
     if messages_raw:
         messages = parse_json_attr(messages_raw, "gen_ai.output.messages")
         if isinstance(messages, list):
-            for msg in messages:
+            for msg in reversed(messages):
                 if isinstance(msg, dict) and msg.get("role") in ASSISTANT_ROLES:
                     text = extract_text_from_message(msg)
                     if text:

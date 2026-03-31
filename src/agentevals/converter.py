@@ -18,7 +18,12 @@ from typing import Any
 from google.adk.evaluation.eval_case import IntermediateData, Invocation
 from google.genai import types as genai_types
 
-from .extraction import get_extractor, parse_json
+from .extraction import (
+    extract_agent_response_from_attrs,
+    extract_user_text_from_attrs,
+    get_extractor,
+    parse_json,
+)
 from .loader.base import Span, Trace
 from .trace_attrs import (
     ADK_INVOCATION_ID,
@@ -153,49 +158,33 @@ def _walk(span: Span, op_prefix: str, acc: list[Span]) -> None:
 
 def _extract_user_content(first_call_llm: Span) -> genai_types.Content:
     """Extract user input from the first call_llm span's llm_request tag."""
+    text = extract_user_text_from_attrs(first_call_llm.tags)
+    if text:
+        return genai_types.Content(
+            role="user",
+            parts=[genai_types.Part(text=text)],
+        )
     llm_request_raw = first_call_llm.get_tag(ADK_LLM_REQUEST, "{}")
     llm_request = parse_json(llm_request_raw)
-    contents = llm_request.get("contents", [])
-
-    for content_dict in reversed(contents):
-        if content_dict.get("role") != "user":
-            continue
-        parts = content_dict.get("parts", [])
-        # Skip function_response parts — only want actual user text messages
-        text_parts = [p for p in parts if "text" in p]
-        if text_parts:
-            return genai_types.Content(
-                role="user",
-                parts=[genai_types.Part(text=p["text"]) for p in text_parts],
-            )
-
-    for content_dict in contents:
+    for content_dict in llm_request.get("contents", []):
         if content_dict.get("role") == "user":
             return _content_from_dict(content_dict)
-
     raise ValueError(f"call_llm span {first_call_llm.span_id}: no user content found in llm_request")
 
 
 def _extract_final_response(last_call_llm: Span) -> genai_types.Content:
     """Extract final text response from the last call_llm span's llm_response tag."""
+    text = extract_agent_response_from_attrs(last_call_llm.tags)
+    if text:
+        return genai_types.Content(
+            role="model",
+            parts=[genai_types.Part(text=text)],
+        )
     llm_response_raw = last_call_llm.get_tag(ADK_LLM_RESPONSE, "{}")
     llm_response = parse_json(llm_response_raw)
-
     content_dict = llm_response.get("content", {})
     if not content_dict:
         raise ValueError(f"call_llm span {last_call_llm.span_id}: no content in llm_response")
-
-    parts_dicts = content_dict.get("parts", [])
-    # Final response should have text parts, not function_call parts
-    text_parts = [p for p in parts_dicts if "text" in p]
-    if text_parts:
-        return genai_types.Content(
-            role="model",
-            parts=[genai_types.Part(text=p["text"]) for p in text_parts],
-        )
-
-    # If the last call_llm only has function_call parts, that's unexpected
-    # for a final response — the agent may have been cut short.
     logger.warning(
         "call_llm span %s: last llm_response has no text parts, may not be the actual final response",
         last_call_llm.span_id,

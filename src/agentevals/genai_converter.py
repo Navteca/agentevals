@@ -14,7 +14,14 @@ from google.adk.evaluation.eval_case import IntermediateData, Invocation
 from google.genai import types as genai_types
 
 from .converter import ConversionResult
-from .extraction import GenAIExtractor, is_invocation_span, is_llm_span, parse_tool_response_content
+from .extraction import (
+    GenAIExtractor,
+    extract_agent_response_from_attrs,
+    extract_user_text_from_attrs,
+    is_invocation_span,
+    is_llm_span,
+    parse_tool_response_content,
+)
 from .loader.base import Span, Trace
 from .trace_attrs import (
     OTEL_GENAI_INPUT_MESSAGES,
@@ -307,50 +314,19 @@ def _turn_to_invocation(turn: _ConversationTurn) -> Invocation:
 
 
 def _extract_user_text(llm_span: Span) -> str:
-    messages_raw = llm_span.get_tag(OTEL_GENAI_INPUT_MESSAGES, "[]")
-    messages = parse_json_attr(messages_raw, "gen_ai.input.messages")
-
-    if not isinstance(messages, list):
-        messages = []
-
-    for msg in reversed(messages):
-        if not isinstance(msg, dict):
-            continue
-        if msg.get("role") in USER_ROLES:
-            text = extract_text_from_message(msg)
-            if text:
-                logger.debug(f"Found user message: {text[:100]}")
-                return text
-
-    logger.warning(f"No user message found in {len(messages)} messages")
-    raise ValueError(f"LLM span {llm_span.span_id}: no user message found in gen_ai.input.messages")
+    text = extract_user_text_from_attrs(llm_span.tags)
+    if text:
+        return text
+    raise ValueError(f"LLM span {llm_span.span_id}: no user message found in span attributes")
 
 
 def _extract_assistant_text(llm_span: Span) -> str:
-    messages_raw = llm_span.get_tag(OTEL_GENAI_OUTPUT_MESSAGES, "[]")
-    messages = parse_json_attr(messages_raw, "gen_ai.output.messages")
-
-    if not isinstance(messages, list):
-        messages = []
-
-    logger.debug(f"Extracting final response from {len(messages)} output messages")
-    for i, msg in enumerate(messages):
-        if isinstance(msg, dict):
-            logger.debug(
-                f"  Message {i}: role={msg.get('role')}, content_len={len(msg.get('content', ''))}, has_tool_calls={bool(msg.get('tool_calls'))}"
-            )
-
-    for msg in reversed(messages):
-        if not isinstance(msg, dict):
-            continue
-        if msg.get("role") in ASSISTANT_ROLES:
-            text = extract_text_from_message(msg)
-            if text:
-                logger.debug(f"Found assistant message with text: {text[:100]}")
-                return text
-
+    text = extract_agent_response_from_attrs(llm_span.tags)
+    if text:
+        return text
     logger.warning(
-        f"LLM span {llm_span.span_id}: no assistant message with content in gen_ai.output.messages ({len(messages)} messages)"
+        "LLM span %s: no assistant message with content in span attributes",
+        llm_span.span_id,
     )
     return ""
 
