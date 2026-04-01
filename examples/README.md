@@ -102,6 +102,12 @@ Detection checks for `gen_ai.request.model` / `gen_ai.input.messages` (GenAI sem
 
 The zero-code and SDK examples implement the same toy agent (dice rolling + prime checking) so you can compare the two approaches directly.
 
+## Kubernetes
+
+| Example | Description |
+|---------|-------------|
+| [kubernetes/](./kubernetes/) | Deploy agentevals with kagent on Kubernetes, using an OTel Collector as a gRPC to HTTP bridge. Includes a walkthrough for comparing two kagent agents (different models) and evaluating them with tool trajectory and response match scores. |
+
 ## Advanced: GenAI Semantic Convention Patterns
 
 > [!TIP]
