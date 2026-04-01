@@ -15,6 +15,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from ..api.models import (
     SessionInfo,
     WSSessionCompleteEvent,
+    WSSessionRemovedEvent,
     WSSessionStartedEvent,
     WSSpanReceivedEvent,
 )
@@ -227,14 +228,21 @@ class StreamingTraceManager:
             active = self.sessions.get(active_id)
             if active and not active.is_complete:
                 active.trace_ids.add(trace_id)
+                if conversation_id:
+                    await self._absorb_orphan_for_trace(trace_id, active)
                 return active
             if active and active.is_complete and conversation_id:
                 self._reopen_session(active, trace_id, session_name)
+                await self._absorb_orphan_for_trace(trace_id, active)
                 return active
 
         existing = self.find_session_by_trace_id(trace_id)
-        if existing and existing.is_complete:
-            self._reopen_session(existing, trace_id, session_name)
+        if existing:
+            if existing.is_complete:
+                self._reopen_session(existing, trace_id, session_name)
+            else:
+                existing.trace_ids.add(trace_id)
+            self._active_session_for_name[session_name] = existing.session_id
             return existing
 
         session_id = session_name
@@ -347,6 +355,55 @@ class StreamingTraceManager:
             session.session_id,
             trace_id,
             len(session.spans),
+        )
+
+    async def _absorb_orphan_for_trace(self, trace_id: str, target: TraceSession) -> None:
+        """Merge an orphan session into the target when conversation_id is discovered.
+
+        When infrastructure spans (no conversation_id) arrive before agent spans,
+        they create a separate session keyed by trace_id. Once the conversation_id
+        is known and routes to the correct session, the orphan's data is merged
+        and the orphan session is removed.
+        """
+        orphan = None
+        orphan_id = None
+        for sid, session in self.sessions.items():
+            if sid == target.session_id:
+                continue
+            if trace_id in session.trace_ids:
+                orphan = session
+                orphan_id = sid
+                break
+
+        if not orphan:
+            return
+
+        target.spans.extend(orphan.spans)
+        target.logs.extend(orphan.logs)
+        target.trace_ids.update(orphan.trace_ids)
+        if orphan.has_root_span:
+            target.has_root_span = True
+
+        del self.sessions[orphan_id]
+        for name, mapped_id in list(self._active_session_for_name.items()):
+            if mapped_id == orphan_id:
+                del self._active_session_for_name[name]
+        for timer_map in (self._completion_timers, self._idle_timers):
+            if orphan_id in timer_map:
+                timer_map.pop(orphan_id).cancel()
+        self.incremental_extractors.pop(orphan_id, None)
+
+        await self.broadcast_to_ui(
+            WSSessionRemovedEvent(
+                session_id=orphan_id,
+                absorbed_by=target.session_id,
+            ).model_dump(by_alias=True)
+        )
+        logger.info(
+            "Absorbed orphan session %s (%d spans) into %s",
+            orphan_id,
+            len(orphan.spans),
+            target.session_id,
         )
 
     async def _delayed_complete(self, session_id: str, delay: float) -> None:

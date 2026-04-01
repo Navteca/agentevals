@@ -96,6 +96,9 @@ async def _process_traces(body: dict, manager: StreamingTraceManager) -> None:
         resource_attrs = resource_span.get("resource", {}).get("attributes", [])
         metadata = _extract_agentevals_metadata(resource_attrs)
 
+        if not metadata.get("conversation_id"):
+            metadata["conversation_id"] = _prescan_conversation_id(resource_span)
+
         for scope_span in resource_span.get("scopeSpans", []):
             scope = scope_span.get("scope", {})
             scope_name = scope.get("name", "")
@@ -256,6 +259,21 @@ def _extract_agentevals_metadata(resource_attrs: list[dict]) -> dict:
         "service_name": flat.get("service.name"),
         "resource_attrs": flat,
     }
+
+
+def _prescan_conversation_id(resource_span: dict) -> str | None:
+    """Pre-scan all spans in a resourceSpan batch for gen_ai.conversation.id.
+
+    Within a single OTLP batch, some scopes (e.g. A2A server instrumentation)
+    may lack conversation_id while others (agent instrumentation) have it.
+    Scanning upfront ensures ALL spans in the batch route to the same session.
+    """
+    for scope_span in resource_span.get("scopeSpans", []):
+        for span_data in scope_span.get("spans", []):
+            conv_id = _extract_conversation_id(span_data.get("attributes", []))
+            if conv_id:
+                return conv_id
+    return None
 
 
 def _extract_conversation_id(attrs_list: list[dict]) -> str | None:

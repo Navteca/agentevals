@@ -180,6 +180,12 @@ class WSSessionCompleteEvent(CamelModel):
     invocations: list[dict[str, Any]]
 
 
+class WSSessionRemovedEvent(CamelModel):
+    type: str = "session_removed"
+    session_id: str
+    absorbed_by: str
+
+
 class WSSpanReceivedEvent(CamelModel):
     type: str = "span_received"
     session_id: str

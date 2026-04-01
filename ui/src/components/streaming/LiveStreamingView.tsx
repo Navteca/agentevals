@@ -318,6 +318,17 @@ export function LiveStreamingView() {
             });
             break;
 
+          case 'session_removed':
+            if (import.meta.env.DEV) {
+              console.log('[Streaming] Session removed:', data.sessionId, 'absorbed by:', data.absorbedBy);
+            }
+            setActiveSessions(prev => {
+              const newMap = new Map(prev);
+              newMap.delete(data.sessionId);
+              return newMap;
+            });
+            break;
+
           case 'session_complete':
             if (import.meta.env.DEV) {
               console.log('[Streaming] Session complete with invocations:', data.invocations?.length);
