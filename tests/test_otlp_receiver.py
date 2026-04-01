@@ -8,16 +8,16 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from agentevals.api.otlp_grpc import OtlpLogsService, OtlpTraceService, create_otlp_grpc_server
-from agentevals.api.otlp_routes import (
+from agentevals.api.otlp_processing import (
     _convert_otlp_log_record,
-    _decode_protobuf_logs,
-    _decode_protobuf_traces,
     _extract_agentevals_metadata,
-    _fix_protobuf_id_fields,
     _normalize_span,
     _parse_otlp_body,
-    _process_logs,
-    _process_traces,
+    decode_protobuf_logs,
+    decode_protobuf_traces,
+    fix_protobuf_id_fields,
+    process_logs,
+    process_traces,
 )
 from agentevals.streaming.session import TraceSession
 from agentevals.streaming.ws_server import StreamingTraceManager
@@ -509,7 +509,7 @@ class TestLateLogReextraction:
                     }
                 ]
             }
-            await _process_logs(body, mgr)
+            await process_logs(body, mgr)
 
             assert len(session.logs) == 1
             mgr.schedule_log_reextraction.assert_called_once_with("s1")
@@ -551,7 +551,7 @@ class TestLateLogReextraction:
                     }
                 ]
             }
-            await _process_logs(body, mgr)
+            await process_logs(body, mgr)
 
             assert len(session.logs) == 0
             assert "new-trace-id" not in session.trace_ids
@@ -752,7 +752,7 @@ class TestResetIdleTimer:
 
 
 # ---------------------------------------------------------------------------
-# Full pipeline: _process_traces
+# Full pipeline: process_traces
 # ---------------------------------------------------------------------------
 
 
@@ -766,7 +766,7 @@ class TestProcessTraces:
                     _make_otlp_attr("agentevals.session_name", "test-session"),
                 ],
             )
-            await _process_traces(body, mgr)
+            await process_traces(body, mgr)
             assert "test-session" in mgr.sessions
             session = mgr.sessions["test-session"]
             assert len(session.spans) == 1
@@ -784,7 +784,7 @@ class TestProcessTraces:
                     _make_span(trace_id="t1", span_id="s2", parent_span_id="p1"),
                 ],
             )
-            await _process_traces(body, mgr)
+            await process_traces(body, mgr)
             sessions = [s for s in mgr.sessions.values() if s.trace_id == "t1"]
             assert len(sessions) == 1
             assert len(sessions[0].spans) == 2
@@ -821,7 +821,7 @@ class TestProcessTraces:
                     },
                 ]
             }
-            await _process_traces(body, mgr)
+            await process_traces(body, mgr)
             trace_ids = {s.trace_id for s in mgr.sessions.values()}
             assert "t1" in trace_ids
             assert "t2" in trace_ids
@@ -837,7 +837,7 @@ class TestProcessTraces:
                 scope_name="gcp.vertex.agent",
                 scope_version="1.2.3",
             )
-            await _process_traces(body, mgr)
+            await process_traces(body, mgr)
             session = list(mgr.sessions.values())[0]
             span = session.spans[0]
             attr_map = {a["key"]: a["value"] for a in span["attributes"]}
@@ -856,7 +856,7 @@ class TestProcessTraces:
             body = _make_export_request(
                 spans=[_make_span(trace_id="t1", parent_span_id=None)],
             )
-            await _process_traces(body, mgr)
+            await process_traces(body, mgr)
             session = list(mgr.sessions.values())[0]
             assert session.has_root_span is True
             mgr.schedule_session_completion.assert_called_once_with(session.session_id)
@@ -874,7 +874,7 @@ class TestProcessTraces:
                     _make_span(trace_id="t1", span_id="s2"),
                 ],
             )
-            await _process_traces(body, mgr)
+            await process_traces(body, mgr)
             assert mgr.reset_idle_timer.call_count == 2
             _cancel_timers(mgr)
 
@@ -895,8 +895,8 @@ class TestProcessTraces:
                 spans=[_make_span(trace_id="trace-b", span_id="s2")],
                 resource_attrs=meta,
             )
-            await _process_traces(body1, mgr)
-            await _process_traces(body2, mgr)
+            await process_traces(body1, mgr)
+            await process_traces(body2, mgr)
 
             assert len(mgr.sessions) == 1
             session = mgr.sessions["my-session"]
@@ -921,8 +921,8 @@ class TestProcessTraces:
                 spans=[_make_span(trace_id="trace-b")],
                 resource_attrs=meta,
             )
-            await _process_traces(body1, mgr)
-            await _process_traces(body2, mgr)
+            await process_traces(body1, mgr)
+            await process_traces(body2, mgr)
 
             log_body = {
                 "resourceLogs": [
@@ -953,7 +953,7 @@ class TestProcessTraces:
                     }
                 ]
             }
-            await _process_logs(log_body, mgr)
+            await process_logs(log_body, mgr)
 
             session = mgr.sessions["my-session"]
             assert len(session.logs) == 2
@@ -964,7 +964,7 @@ class TestProcessTraces:
     def test_empty_request(self):
         async def go():
             mgr = _make_mgr()
-            await _process_traces({"resourceSpans": []}, mgr)
+            await process_traces({"resourceSpans": []}, mgr)
             assert len(mgr.sessions) == 0
 
         _run(go())
@@ -975,7 +975,7 @@ class TestProcessTraces:
             body = _make_export_request(
                 spans=[_make_span(trace_id="t1")],
             )
-            await _process_traces(body, mgr)
+            await process_traces(body, mgr)
             span_received_calls = [c for c in mgr.broadcast_to_ui.call_args_list if c[0][0]["type"] == "span_received"]
             assert len(span_received_calls) == 1
             _cancel_timers(mgr)
@@ -984,7 +984,7 @@ class TestProcessTraces:
 
 
 # ---------------------------------------------------------------------------
-# Full pipeline: _process_logs
+# Full pipeline: process_logs
 # ---------------------------------------------------------------------------
 
 
@@ -1027,7 +1027,7 @@ class TestOrphanLogBuffer:
                     }
                 ]
             }
-            await _process_logs(body, mgr)
+            await process_logs(body, mgr)
             assert len(mgr._orphan_logs) == 1
             assert mgr._orphan_logs[0]["trace_id"] == "trace-1"
             assert mgr._orphan_logs[0]["session_name"] == "my-agent"
@@ -1071,7 +1071,7 @@ class TestOrphanLogBuffer:
                     }
                 ]
             }
-            await _process_logs(log_body, mgr)
+            await process_logs(log_body, mgr)
             assert len(mgr._orphan_logs) == 1
 
             meta = {"eval_set_id": None, "session_name": "my-agent", "resource_attrs": {}}
@@ -1120,7 +1120,7 @@ class TestOrphanLogBuffer:
                     }
                 ]
             }
-            await _process_logs(log_body, mgr)
+            await process_logs(log_body, mgr)
 
             meta = {"eval_set_id": None, "session_name": "my-agent", "resource_attrs": {}}
             session = await mgr.get_or_create_otlp_session("trace-1", meta)
@@ -1195,7 +1195,7 @@ class TestOrphanLogBuffer:
                         }
                     ]
                 }
-                await _process_logs(log_body, mgr)
+                await process_logs(log_body, mgr)
 
             assert len(mgr._orphan_logs) == 3
 
@@ -1235,7 +1235,7 @@ class TestProcessLogs:
                     }
                 ]
             }
-            await _process_logs(body, mgr)
+            await process_logs(body, mgr)
             session = mgr.sessions["s1"]
             assert len(session.logs) == 1
             assert session.logs[0]["event_name"] == "gen_ai.user.message"
@@ -1266,7 +1266,7 @@ class TestProcessLogs:
                     }
                 ]
             }
-            await _process_logs(body, mgr)
+            await process_logs(body, mgr)
             assert len(mgr.sessions) == 0
             assert len(mgr._orphan_logs) == 1
 
@@ -1298,7 +1298,7 @@ class TestProcessLogs:
                     }
                 ]
             }
-            await _process_logs(body, mgr)
+            await process_logs(body, mgr)
             session = mgr.sessions["s1"]
             assert len(session.logs) == 0
 
@@ -1425,14 +1425,14 @@ class TestFixProtobufIdFields:
         raw_bytes = _hex_to_bytes(TRACE_ID_HEX)
         b64 = base64.b64encode(raw_bytes).decode()
         data = {"traceId": b64, "spanId": base64.b64encode(_hex_to_bytes(SPAN_ID_HEX)).decode()}
-        _fix_protobuf_id_fields(data)
+        fix_protobuf_id_fields(data)
         assert data["traceId"] == TRACE_ID_HEX
         assert data["spanId"] == SPAN_ID_HEX
 
     def test_converts_parent_span_id(self):
         b64 = base64.b64encode(_hex_to_bytes(PARENT_SPAN_ID_HEX)).decode()
         data = {"parentSpanId": b64}
-        _fix_protobuf_id_fields(data)
+        fix_protobuf_id_fields(data)
         assert data["parentSpanId"] == PARENT_SPAN_ID_HEX
 
     def test_recurses_into_nested_structures(self):
@@ -1440,20 +1440,20 @@ class TestFixProtobufIdFields:
         b64_trace = base64.b64encode(raw_bytes).decode()
         b64_span = base64.b64encode(_hex_to_bytes(SPAN_ID_HEX)).decode()
         data = {"resourceSpans": [{"scopeSpans": [{"spans": [{"traceId": b64_trace, "spanId": b64_span}]}]}]}
-        _fix_protobuf_id_fields(data)
+        fix_protobuf_id_fields(data)
         span = data["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
         assert span["traceId"] == TRACE_ID_HEX
         assert span["spanId"] == SPAN_ID_HEX
 
     def test_leaves_non_id_fields_alone(self):
         data = {"name": "test", "kind": 1, "traceId": base64.b64encode(b"\x01\x02").decode()}
-        _fix_protobuf_id_fields(data)
+        fix_protobuf_id_fields(data)
         assert data["name"] == "test"
         assert data["kind"] == 1
 
     def test_handles_already_hex_strings(self):
         data = {"traceId": TRACE_ID_HEX}
-        _fix_protobuf_id_fields(data)
+        fix_protobuf_id_fields(data)
         assert len(data["traceId"]) > 0
 
 
@@ -1463,7 +1463,7 @@ class TestDecodeProtobufTraces:
         request = _make_pb_export_request([span])
         raw = request.SerializeToString()
 
-        body = _decode_protobuf_traces(raw)
+        body = decode_protobuf_traces(raw)
 
         assert "resourceSpans" in body
         spans = body["resourceSpans"][0]["scopeSpans"][0]["spans"]
@@ -1478,7 +1478,7 @@ class TestDecodeProtobufTraces:
         request = _make_pb_export_request([span])
         raw = request.SerializeToString()
 
-        body = _decode_protobuf_traces(raw)
+        body = decode_protobuf_traces(raw)
         decoded_span = body["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
         assert "parentSpanId" not in decoded_span
 
@@ -1493,7 +1493,7 @@ class TestDecodeProtobufTraces:
         request = _make_pb_export_request([span])
         raw = request.SerializeToString()
 
-        body = _decode_protobuf_traces(raw)
+        body = decode_protobuf_traces(raw)
         decoded_attrs = body["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["attributes"]
         attr_map = {a["key"]: a["value"] for a in decoded_attrs}
         assert attr_map["gen_ai.request.model"]["stringValue"] == "gpt-4"
@@ -1508,7 +1508,7 @@ class TestDecodeProtobufTraces:
         request = _make_pb_export_request([span], resource_attrs=resource_attrs)
         raw = request.SerializeToString()
 
-        body = _decode_protobuf_traces(raw)
+        body = decode_protobuf_traces(raw)
         res_attrs = body["resourceSpans"][0]["resource"]["attributes"]
         attr_map = {a["key"]: a["value"] for a in res_attrs}
         assert attr_map["service.name"]["stringValue"] == "test-agent"
@@ -1519,7 +1519,7 @@ class TestDecodeProtobufTraces:
         request = _make_pb_export_request([span], scope_name="gcp.vertex.agent", scope_version="1.2.3")
         raw = request.SerializeToString()
 
-        body = _decode_protobuf_traces(raw)
+        body = decode_protobuf_traces(raw)
         scope = body["resourceSpans"][0]["scopeSpans"][0]["scope"]
         assert scope["name"] == "gcp.vertex.agent"
         assert scope["version"] == "1.2.3"
@@ -1530,7 +1530,7 @@ class TestDecodeProtobufTraces:
         request = _make_pb_export_request([span1, span2])
         raw = request.SerializeToString()
 
-        body = _decode_protobuf_traces(raw)
+        body = decode_protobuf_traces(raw)
         spans = body["resourceSpans"][0]["scopeSpans"][0]["spans"]
         assert len(spans) == 2
         names = {s["name"] for s in spans}
@@ -1539,7 +1539,7 @@ class TestDecodeProtobufTraces:
     def test_empty_request(self):
         request = TraceServiceRequestPB()
         raw = request.SerializeToString()
-        body = _decode_protobuf_traces(raw)
+        body = decode_protobuf_traces(raw)
         assert body.get("resourceSpans") is None or body.get("resourceSpans") == []
 
 
@@ -1558,7 +1558,7 @@ class TestDecodeProtobufLogs:
         request = LogsServiceRequestPB(resource_logs=[resource_logs])
         raw = request.SerializeToString()
 
-        body = _decode_protobuf_logs(raw)
+        body = decode_protobuf_logs(raw)
 
         assert "resourceLogs" in body
         lr = body["resourceLogs"][0]["scopeLogs"][0]["logRecords"][0]
@@ -1570,7 +1570,7 @@ class TestDecodeProtobufLogs:
     def test_empty_logs_request(self):
         request = LogsServiceRequestPB()
         raw = request.SerializeToString()
-        body = _decode_protobuf_logs(raw)
+        body = decode_protobuf_logs(raw)
         assert body.get("resourceLogs") is None or body.get("resourceLogs") == []
 
 
@@ -1666,8 +1666,8 @@ class TestProtobufJsonParity:
             request = _make_pb_export_request([span], resource_attrs=resource_attrs)
             raw = request.SerializeToString()
 
-            body = _decode_protobuf_traces(raw)
-            await _process_traces(body, mgr)
+            body = decode_protobuf_traces(raw)
+            await process_traces(body, mgr)
 
             assert "pb-session" in mgr.sessions
             session = mgr.sessions["pb-session"]
@@ -1687,8 +1687,8 @@ class TestProtobufJsonParity:
             request = _make_pb_export_request([span])
             raw = request.SerializeToString()
 
-            body = _decode_protobuf_traces(raw)
-            await _process_traces(body, mgr)
+            body = decode_protobuf_traces(raw)
+            await process_traces(body, mgr)
 
             session = list(mgr.sessions.values())[0]
             assert session.has_root_span is True
@@ -1705,8 +1705,8 @@ class TestProtobufJsonParity:
             request = _make_pb_export_request([span], scope_name="strands.agent", scope_version="2.0.0")
             raw = request.SerializeToString()
 
-            body = _decode_protobuf_traces(raw)
-            await _process_traces(body, mgr)
+            body = decode_protobuf_traces(raw)
+            await process_traces(body, mgr)
 
             session = list(mgr.sessions.values())[0]
             stored_span = session.spans[0]
