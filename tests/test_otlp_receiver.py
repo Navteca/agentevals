@@ -1,9 +1,13 @@
 """Tests for the OTLP HTTP receiver endpoints and session auto-management."""
 
 import asyncio
+import sys
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
+from agentevals.api.otlp_grpc import OtlpLogsService, OtlpTraceService, create_otlp_grpc_server
 from agentevals.api.otlp_routes import (
     _convert_otlp_log_record,
     _decode_protobuf_logs,
@@ -1337,9 +1341,11 @@ class TestCleanupWithTimers:
 
 import base64
 
+from opentelemetry.proto.collector.logs.v1 import logs_service_pb2
 from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
     ExportLogsServiceRequest as LogsServiceRequestPB,
 )
+from opentelemetry.proto.collector.trace.v1 import trace_service_pb2
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
     ExportTraceServiceRequest as TraceServiceRequestPB,
 )
@@ -1566,6 +1572,83 @@ class TestDecodeProtobufLogs:
         raw = request.SerializeToString()
         body = _decode_protobuf_logs(raw)
         assert body.get("resourceLogs") is None or body.get("resourceLogs") == []
+
+
+class TestCreateOtlpGrpcServer:
+    def test_raises_when_bind_fails(self, monkeypatch):
+        fake_server = MagicMock()
+        fake_server.add_insecure_port.return_value = 0
+
+        class _FakeAio:
+            @staticmethod
+            def server():
+                return fake_server
+
+        fake_grpc = MagicMock()
+        fake_grpc.aio = _FakeAio()
+        monkeypatch.setitem(sys.modules, "grpc", fake_grpc)
+
+        with pytest.raises(RuntimeError, match="Failed to bind OTLP gRPC receiver"):
+            create_otlp_grpc_server(
+                host="127.0.0.1",
+                port=4317,
+                manager=MagicMock(),
+            )
+
+
+class TestGrpcServices:
+    def test_trace_service_export_creates_session(self):
+        async def go():
+            mgr = _make_mgr()
+            service = OtlpTraceService(mgr)
+
+            resource_attrs = [
+                KeyValue(key="agentevals.session_name", value=AnyValue(string_value="grpc-session")),
+                KeyValue(key="agentevals.eval_set_id", value=AnyValue(string_value="grpc-eval")),
+            ]
+            span = _make_pb_span(parent_span_id_hex=PARENT_SPAN_ID_HEX)
+            request = _make_pb_export_request([span], resource_attrs=resource_attrs)
+
+            response = await service.Export(request, None)
+
+            assert isinstance(response, trace_service_pb2.ExportTraceServiceResponse)
+            assert "grpc-session" in mgr.sessions
+            session = mgr.sessions["grpc-session"]
+            assert session.eval_set_id == "grpc-eval"
+            assert session.trace_id == TRACE_ID_HEX
+            assert len(session.spans) == 1
+            _cancel_timers(mgr)
+
+        _run(go())
+
+    def test_logs_service_export_attaches_logs_to_existing_session(self):
+        async def go():
+            mgr = _make_mgr()
+            service = OtlpLogsService(mgr)
+            meta = {"eval_set_id": None, "session_name": "grpc-logs", "resource_attrs": {}}
+            session = await mgr.get_or_create_otlp_session(TRACE_ID_HEX, meta)
+
+            log_record = LogRecordPB(
+                time_unix_nano=1000000000,
+                trace_id=_hex_to_bytes(TRACE_ID_HEX),
+                span_id=_hex_to_bytes(SPAN_ID_HEX),
+                body=AnyValue(string_value='{"content": "hello from grpc"}'),
+            )
+            log_record.attributes.append(
+                KeyValue(key="event.name", value=AnyValue(string_value="gen_ai.user.message"))
+            )
+            scope_logs = ScopeLogs(log_records=[log_record])
+            resource_logs = ResourceLogs(scope_logs=[scope_logs])
+            request = LogsServiceRequestPB(resource_logs=[resource_logs])
+
+            response = await service.Export(request, None)
+
+            assert isinstance(response, logs_service_pb2.ExportLogsServiceResponse)
+            assert len(session.logs) == 1
+            assert session.logs[0]["event_name"] == "gen_ai.user.message"
+            _cancel_timers(mgr)
+
+        _run(go())
 
 
 class TestProtobufJsonParity:

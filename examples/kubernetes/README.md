@@ -1,15 +1,14 @@
 # Kubernetes: Evaluating kagent with agentevals
 
-Run agentevals alongside [kagent](https://github.com/kagent-dev/kagent) on Kubernetes to evaluate AI agent conversations in real time. This example deploys three components:
+Run agentevals alongside [kagent](https://github.com/kagent-dev/kagent) on Kubernetes to evaluate AI agent conversations in real time. This example deploys:
 
-1. **agentevals** receives OTLP traces over HTTP and serves the evaluation UI
-2. **OTel Collector** bridges the protocol gap: kagent exports traces via gRPC, but agentevals only supports OTLP/HTTP today, so the Collector converts gRPC to HTTP
-3. **kagent** provides Kubernetes-native AI agents with built-in OTel instrumentation (gRPC export only)
+1. **agentevals** receives OTLP traces over HTTP (`:4318`) and gRPC (`:4317`) and serves the evaluation UI
+2. **kagent** provides Kubernetes-native AI agents with built-in OTel instrumentation (gRPC export)
 
 ```
-kagent (gRPC :4317) --> OTel Collector --> agentevals (HTTP :4318)
-                                              |
-                                         UI on :8001
+kagent (gRPC :4317) -----------------> agentevals (gRPC :4317 / HTTP :4318)
+                                          |
+                                     UI on :8001
 ```
 
 ## Prerequisites
@@ -33,35 +32,11 @@ This creates a single pod exposing:
 | Port | Purpose |
 |------|---------|
 | 8001 | Web UI and API |
+| 4317 | OTLP gRPC receiver (traces and logs) |
 | 4318 | OTLP HTTP receiver (traces and logs) |
 | 8080 | MCP (Streamable HTTP) |
 
-### 2. OTel Collector (gRPC to HTTP bridge)
-
-kagent exports traces over gRPC (port 4317), but agentevals accepts OTLP over HTTP (port 4318). The OTel Collector bridges the two protocols.
-
-```bash
-helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
-helm repo update
-
-helm upgrade --install otel-collector open-telemetry/opentelemetry-collector \
-  --namespace kagent --create-namespace \
-  --set mode=deployment \
-  --set replicaCount=1 \
-  --set image.repository=otel/opentelemetry-collector \
-  --set ports.otlp.enabled=true \
-  --set ports.otlp-http.enabled=false \
-  --set config.exporters.otlphttp.endpoint="http://agentevals.default.svc.cluster.local:4318" \
-  --set config.exporters.otlphttp.compression="none" \
-  --set config.service.pipelines.traces.receivers[0]=otlp \
-  --set config.service.pipelines.traces.exporters[0]=otlphttp \
-  --set config.service.pipelines.logs.receivers[0]=otlp \
-  --set config.service.pipelines.logs.exporters[0]=otlphttp
-```
-
-> **Note:** If you deployed agentevals in a namespace other than `default`, update the `endpoint` value accordingly: `http://agentevals.<namespace>.svc.cluster.local:4318`.
-
-### 3. kagent
+### 2. kagent
 
 Install the CRDs first, then the kagent operator with OTel tracing enabled:
 
@@ -83,16 +58,16 @@ helm upgrade --install kagent oci://ghcr.io/kagent-dev/kagent/helm/kagent \
   --set agents.cilium-manager-agent.enabled=false \
   --set agents.cilium-debug-agent.enabled=false \
   --set otel.tracing.enabled=true \
-  --set otel.tracing.exporter.otlp.endpoint="otel-collector-opentelemetry-collector.kagent.svc.cluster.local:4317" \
+  --set otel.tracing.exporter.otlp.endpoint="agentevals.default.svc.cluster.local:4317" \
   --set otel.tracing.exporter.otlp.insecure=true
 ```
 
-This installs kagent with only the default Helm agent (`helm-agent`) and the K8s troubleshooter enabled, and points its OTel exporter at the Collector.
+This installs kagent with only the default Helm agent (`helm-agent`) and the K8s troubleshooter enabled, and points its OTel exporter directly at agentevals gRPC.
 
 ### Verify the deployment
 
 ```bash
-kubectl get pods -A -l 'app.kubernetes.io/name in (agentevals, kagent, opentelemetry-collector)'
+kubectl get pods -A -l 'app.kubernetes.io/name in (agentevals, kagent)'
 ```
 
 All pods should be `Running` before continuing.
@@ -240,7 +215,6 @@ You can also click an individual conversation and see a breakdown of each evalua
 ```bash
 helm uninstall kagent -n kagent
 helm uninstall kagent-crds -n kagent
-helm uninstall otel-collector -n kagent
 helm uninstall agentevals
 kubectl delete namespace kagent
 ```
