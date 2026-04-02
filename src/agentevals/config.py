@@ -132,6 +132,19 @@ class EvalRunConfig(BaseModel):
         description="Score threshold for pass/fail.",
     )
 
+    trajectory_match_type: str | None = Field(
+        default=None,
+        description="Match type for tool_trajectory_avg_score: 'EXACT', 'IN_ORDER', or 'ANY_ORDER'. Default: EXACT.",
+    )
+
+    @field_validator("trajectory_match_type")
+    @classmethod
+    def _validate_trajectory_match_type(cls, v: str | None) -> str | None:
+        valid = {"EXACT", "IN_ORDER", "ANY_ORDER"}
+        if v is not None and v.upper() not in valid:
+            raise ValueError(f"Invalid trajectory_match_type '{v}'. Valid values: {sorted(valid)}")
+        return v.upper() if v is not None else v
+
     output_format: str = Field(
         default="table",
         description="Output format: 'table', 'json', or 'summary'.",

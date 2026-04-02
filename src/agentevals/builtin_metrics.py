@@ -60,6 +60,7 @@ def build_eval_metric(
     judge_model: str | None,
     threshold: float | None,
     rubrics: list[str] | None = None,
+    match_type: str | None = None,
 ) -> EvalMetric:
     """Construct an ADK ``EvalMetric`` with the appropriate criterion."""
     effective_threshold = threshold if threshold is not None else 0.5
@@ -67,7 +68,10 @@ def build_eval_metric(
     criterion: BaseCriterion | None = None
 
     if metric_name == "tool_trajectory_avg_score":
-        criterion = ToolTrajectoryCriterion(threshold=effective_threshold)
+        _match = (
+            ToolTrajectoryCriterion.MatchType[match_type] if match_type else ToolTrajectoryCriterion.MatchType.EXACT
+        )
+        criterion = ToolTrajectoryCriterion(threshold=effective_threshold, match_type=_match)
     elif metric_name == "final_response_match_v2":
         judge_opts = JudgeModelOptions()
         if judge_model:
@@ -105,7 +109,11 @@ def build_eval_metric(
             threshold=effective_threshold,
             judge_model_options=judge_opts,
         )
-    elif metric_name in ("response_match_score", "response_evaluation_score", "safety_v1"):
+    elif metric_name in (
+        "response_match_score",
+        "response_evaluation_score",
+        "safety_v1",
+    ):
         criterion = BaseCriterion(threshold=effective_threshold)
 
     return EvalMetric(
@@ -179,6 +187,7 @@ async def evaluate_builtin_metric(
     expected_invocations: list[Invocation] | None,
     judge_model: str | None,
     threshold: float | None,
+    match_type: str | None = None,
 ) -> dict[str, Any]:
     """Evaluate a single built-in ADK metric.
 
@@ -197,7 +206,7 @@ async def evaluate_builtin_metric(
         )
 
     try:
-        eval_metric = build_eval_metric(metric_name, judge_model, threshold)
+        eval_metric = build_eval_metric(metric_name, judge_model, threshold, match_type=match_type)
         evaluator: Evaluator = get_evaluator(eval_metric)
 
         if inspect.iscoroutinefunction(evaluator.evaluate_invocations):
