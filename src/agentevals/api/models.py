@@ -113,7 +113,10 @@ class DebugLoadData(CamelModel):
 
 class TraceConversionMetadata(CamelModel):
     agent_name: str | None = None
+    agent_id: str | None = None
     model: str | None = None
+    response_model: str | None = None
+    provider: str | None = None
     start_time: int | None = None
     user_input_preview: str | None = None
     final_output_preview: str | None = None

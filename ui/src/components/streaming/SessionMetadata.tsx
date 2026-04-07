@@ -5,6 +5,13 @@ interface SessionMetadataProps {
     metadata: Record<string, any>;
     startedAt: string;
     status: 'active' | 'complete';
+    invocations?: Array<{
+      modelInfo?: {
+        provider?: string;
+        cacheCreationTokens?: number;
+        cacheReadTokens?: number;
+      };
+    }>;
   };
   liveStats: {
     totalInputTokens: number;
@@ -12,8 +19,34 @@ interface SessionMetadataProps {
   };
 }
 
+function MetadataItem({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div style={{
+        fontSize: '10px',
+        color: 'var(--text-tertiary)',
+        marginBottom: '4px',
+        fontWeight: 600,
+        textTransform: 'uppercase' as const,
+      }}>
+        {label}
+      </div>
+      <div style={{
+        fontSize: '14px',
+        fontWeight: 600,
+        color: 'var(--text-primary)',
+      }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export function SessionMetadata({ session, liveStats }: SessionMetadataProps) {
   const totalTokens = liveStats.totalInputTokens + liveStats.totalOutputTokens;
+  const provider = session.invocations?.[0]?.modelInfo?.provider;
+  const totalCacheCreation = session.invocations?.reduce((sum, inv) => sum + (inv.modelInfo?.cacheCreationTokens || 0), 0) || 0;
+  const totalCacheRead = session.invocations?.reduce((sum, inv) => sum + (inv.modelInfo?.cacheReadTokens || 0), 0) || 0;
 
   return (
     <div style={{
@@ -26,52 +59,36 @@ export function SessionMetadata({ session, liveStats }: SessionMetadataProps) {
       flexWrap: 'wrap',
     }}>
       {totalTokens > 0 && (
-        <div>
-          <div style={{
-            fontSize: '10px',
-            color: 'var(--text-tertiary)',
-            marginBottom: '4px',
-            fontWeight: 600,
-            textTransform: 'uppercase' as const,
-          }}>
-            Tokens
-          </div>
-          <div style={{
-            fontSize: '14px',
-            fontWeight: 600,
-            color: '#10b981',
-          }}>
+        <MetadataItem label="Tokens">
+          <span style={{ color: '#10b981' }}>
             {totalTokens.toLocaleString()}
-            <span style={{
-              fontSize: '11px',
-              color: 'var(--text-tertiary)',
-              marginLeft: '6px',
-            }}>
-              (↓{liveStats.totalInputTokens.toLocaleString()} ↑{liveStats.totalOutputTokens.toLocaleString()})
-            </span>
-          </div>
-        </div>
+          </span>
+          <span style={{
+            fontSize: '11px',
+            color: 'var(--text-tertiary)',
+            marginLeft: '6px',
+          }}>
+            (↓{liveStats.totalInputTokens.toLocaleString()} ↑{liveStats.totalOutputTokens.toLocaleString()})
+          </span>
+        </MetadataItem>
+      )}
+
+      {provider && (
+        <MetadataItem label="Provider">{provider}</MetadataItem>
+      )}
+
+      {(totalCacheCreation > 0 || totalCacheRead > 0) && (
+        <MetadataItem label="Cache Tokens">
+          <span style={{ color: '#f59e0b' }}>
+            {totalCacheRead > 0 && `${totalCacheRead.toLocaleString()} read`}
+            {totalCacheCreation > 0 && totalCacheRead > 0 && ' / '}
+            {totalCacheCreation > 0 && `${totalCacheCreation.toLocaleString()} created`}
+          </span>
+        </MetadataItem>
       )}
 
       {Object.keys(session.metadata).length > 0 && Object.entries(session.metadata).map(([key, value]) => (
-        <div key={key}>
-          <div style={{
-            fontSize: '10px',
-            color: 'var(--text-tertiary)',
-            marginBottom: '4px',
-            fontWeight: 600,
-            textTransform: 'uppercase' as const,
-          }}>
-            {key}
-          </div>
-          <div style={{
-            fontSize: '14px',
-            fontWeight: 600,
-            color: 'var(--text-primary)',
-          }}>
-            {String(value)}
-          </div>
-        </div>
+        <MetadataItem key={key} label={key}>{String(value)}</MetadataItem>
       ))}
     </div>
   );

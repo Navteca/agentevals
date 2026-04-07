@@ -2,16 +2,27 @@ import React from 'react';
 import { css } from '@emotion/react';
 import type { PerformanceMetrics } from '../../lib/types';
 
-interface PerformanceSectionProps {
-  metrics: PerformanceMetrics;
+interface TraceInfo {
+  provider?: string;
+  model?: string;
+  responseModel?: string;
+  agentName?: string;
 }
 
-export const PerformanceSection: React.FC<PerformanceSectionProps> = ({ metrics }) => {
+interface PerformanceSectionProps {
+  metrics: PerformanceMetrics;
+  traceInfo?: TraceInfo;
+}
+
+export const PerformanceSection: React.FC<PerformanceSectionProps> = ({ metrics, traceInfo }) => {
   if (!metrics || !metrics.latency || !metrics.tokens) {
     return null;
   }
 
   const { latency, tokens } = metrics;
+  const hasCacheTokens = (tokens.cacheCreationTokens && tokens.cacheCreationTokens > 0)
+    || (tokens.cacheReadTokens && tokens.cacheReadTokens > 0);
+  const hasTraceInfo = traceInfo && (traceInfo.provider || traceInfo.responseModel);
 
   return (
     <div css={sectionStyle}>
@@ -19,6 +30,22 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({ metrics 
 
       <table>
         <tbody>
+          {hasTraceInfo && (
+            <>
+              {traceInfo.provider && (
+                <tr>
+                  <td>Provider</td>
+                  <td>{traceInfo.provider}</td>
+                </tr>
+              )}
+              {traceInfo.responseModel && traceInfo.responseModel !== traceInfo.model && (
+                <tr>
+                  <td>Response Model</td>
+                  <td>{traceInfo.responseModel}</td>
+                </tr>
+              )}
+            </>
+          )}
           <tr>
             <td>Overall Latency (p99)</td>
             <td>{latency.overall.p99.toFixed(0)} ms</td>
@@ -39,6 +66,22 @@ export const PerformanceSection: React.FC<PerformanceSectionProps> = ({ metrics 
             <td>Tokens per LLM Call (p99)</td>
             <td>{tokens.perLlmCall.p99.toFixed(0)}</td>
           </tr>
+          {hasCacheTokens && (
+            <>
+              {tokens.cacheReadTokens && tokens.cacheReadTokens > 0 && (
+                <tr>
+                  <td>Cache Read Tokens</td>
+                  <td>{tokens.cacheReadTokens.toLocaleString()}</td>
+                </tr>
+              )}
+              {tokens.cacheCreationTokens && tokens.cacheCreationTokens > 0 && (
+                <tr>
+                  <td>Cache Creation Tokens</td>
+                  <td>{tokens.cacheCreationTokens.toLocaleString()}</td>
+                </tr>
+              )}
+            </>
+          )}
         </tbody>
       </table>
     </div>

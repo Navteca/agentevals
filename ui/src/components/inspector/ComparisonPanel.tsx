@@ -5,6 +5,13 @@ import type { Invocation, MetricResult, PerformanceMetrics } from '../../lib/typ
 import { MetricsComparisonSection } from './MetricsComparisonSection';
 import { PerformanceSection } from './PerformanceSection';
 
+interface TraceInfo {
+  provider?: string;
+  model?: string;
+  responseModel?: string;
+  agentName?: string;
+}
+
 interface ComparisonPanelProps {
   actualInvocation: Invocation | null;
   expectedInvocation: Invocation | null;
@@ -13,6 +20,7 @@ interface ComparisonPanelProps {
   selectedMetrics: string[];
   isEvaluating: boolean;
   performanceMetrics?: PerformanceMetrics;
+  traceInfo?: TraceInfo;
   allActualInvocations?: Invocation[];
   allExpectedInvocations?: Invocation[];
 }
@@ -25,6 +33,7 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
   selectedMetrics,
   isEvaluating,
   performanceMetrics,
+  traceInfo,
   allActualInvocations,
   allExpectedInvocations,
 }) => {
@@ -60,7 +69,7 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
       <div css={panelContentStyles}>
         {performanceMetrics && (
           <div css={performanceSectionContainerStyles}>
-            <PerformanceSection metrics={performanceMetrics} />
+            <PerformanceSection metrics={performanceMetrics} traceInfo={traceInfo} />
           </div>
         )}
 

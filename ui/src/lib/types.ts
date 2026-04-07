@@ -137,6 +137,8 @@ export interface PerformanceMetrics {
     totalOutput: number;
     total: number;
     perLlmCall: { p50: number; p95: number; p99: number };
+    cacheCreationTokens?: number;
+    cacheReadTokens?: number;
   };
 }
 
@@ -148,7 +150,10 @@ export interface TraceResult {
   conversionWarnings: string[];
   performanceMetrics?: PerformanceMetrics;
   agentName?: string;
+  agentId?: string;
   model?: string;
+  responseModel?: string;
+  provider?: string;
   startTime?: number;
   userInputPreview?: string;
   finalOutputPreview?: string;
@@ -181,8 +186,11 @@ export interface TraceTableRow {
   sessionId?: string;
   status: TraceRowStatus;
   agentName?: string;
+  agentId?: string;
   startTime?: number;
   model?: string;
+  responseModel?: string;
+  provider?: string;
   userInputPreview?: string;
   finalOutputPreview?: string;
   metricResults: Map<string, MetricResult>;

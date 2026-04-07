@@ -1,4 +1,5 @@
-openai-agents>=0.3.3
+openai>=2.30.0
+openai-agents>=0.13.0
 opentelemetry-instrumentation-openai-agents-v2>=0.1.0
 
 opentelemetry-sdk>=1.36.0

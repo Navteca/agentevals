@@ -30,6 +30,10 @@ export const InspectorView: React.FC = () => {
         metricResults: Array.from(tableRow.metricResults.values()),
         conversionWarnings: tableRow.conversionWarnings,
         performanceMetrics: tableRow.performanceMetrics,
+        agentName: tableRow.agentName,
+        model: tableRow.model,
+        responseModel: tableRow.responseModel,
+        provider: tableRow.provider,
       };
     }
     return state.results.find(r => r.traceId === state.selectedTraceId);
@@ -207,6 +211,12 @@ export const InspectorView: React.FC = () => {
       selectedMetrics={state.selectedMetrics}
       isEvaluating={state.isEvaluating}
       performanceMetrics={traceResult.performanceMetrics}
+      traceInfo={{
+        provider: traceResult.provider,
+        model: traceResult.model,
+        responseModel: traceResult.responseModel,
+        agentName: traceResult.agentName,
+      }}
       allActualInvocations={invocations}
       allExpectedInvocations={expectedInvocations}
     />
