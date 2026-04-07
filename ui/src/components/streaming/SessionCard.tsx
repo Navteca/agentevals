@@ -13,6 +13,14 @@ interface Invocation {
     models?: string[];
     inputTokens?: number;
     outputTokens?: number;
+    provider?: string;
+    responseModels?: string[];
+    finishReasons?: string[];
+    cacheCreationTokens?: number;
+    cacheReadTokens?: number;
+    temperature?: number;
+    maxTokens?: number;
+    errorTypes?: string[];
   };
 }
 
@@ -92,6 +100,11 @@ export function SessionCard({ session, isSelected, onSelect, onRemove, evaluatio
     session.invocations?.[0]?.modelInfo?.models?.[0] ||
     'Unknown';
 
+  const providerName = session.invocations?.[0]?.modelInfo?.provider || null;
+
+  const totalCacheCreation = session.invocations?.reduce((sum, inv) => sum + (inv.modelInfo?.cacheCreationTokens || 0), 0) || 0;
+  const totalCacheRead = session.invocations?.reduce((sum, inv) => sum + (inv.modelInfo?.cacheReadTokens || 0), 0) || 0;
+
   return (
     <div
       style={{
@@ -124,6 +137,19 @@ export function SessionCard({ session, isSelected, onSelect, onRemove, evaluatio
               {modelName}
             </span>
 
+            {providerName && (
+              <span style={{
+                fontSize: '11px',
+                fontWeight: 600,
+                color: '#3b82f6',
+                background: 'rgba(59, 130, 246, 0.1)',
+                padding: '4px 10px',
+                borderRadius: '6px',
+              }}>
+                {providerName}
+              </span>
+            )}
+
             {session.invocations && session.invocations.length > 0 && (
               <span style={{
                 fontSize: '11px',
@@ -147,6 +173,21 @@ export function SessionCard({ session, isSelected, onSelect, onRemove, evaluatio
                 borderRadius: '6px',
               }}>
                 {totalTokens.toLocaleString()} tokens
+              </span>
+            )}
+
+            {(totalCacheCreation > 0 || totalCacheRead > 0) && (
+              <span style={{
+                fontSize: '11px',
+                fontWeight: 600,
+                color: '#f59e0b',
+                background: 'rgba(245, 158, 11, 0.1)',
+                padding: '4px 10px',
+                borderRadius: '6px',
+              }}>
+                cache {totalCacheRead > 0 ? `${totalCacheRead.toLocaleString()} read` : ''}
+                {totalCacheCreation > 0 && totalCacheRead > 0 ? ' / ' : ''}
+                {totalCacheCreation > 0 ? `${totalCacheCreation.toLocaleString()} created` : ''}
               </span>
             )}
 
@@ -408,6 +449,7 @@ export function SessionCard({ session, isSelected, onSelect, onRemove, evaluatio
             metadata: session.metadata,
             startedAt: session.startedAt,
             status: session.status,
+            invocations: session.invocations,
           }}
           liveStats={liveStats}
         />

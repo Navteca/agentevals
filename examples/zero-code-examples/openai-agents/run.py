@@ -56,6 +56,7 @@ def main():
     print(f"OTLP endpoint: {endpoint}")
 
     os.environ.setdefault("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "span_and_event")
+    os.environ.setdefault("OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental")
 
     os.environ.setdefault(
         "OTEL_RESOURCE_ATTRIBUTES",

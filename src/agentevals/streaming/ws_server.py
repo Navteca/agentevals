@@ -20,7 +20,12 @@ from ..api.models import (
     WSSpanReceivedEvent,
 )
 from ..converter import convert_traces
-from ..extraction import extract_token_usage_from_attrs, is_llm_span, parse_tool_response_content
+from ..extraction import (
+    extract_extended_model_info_from_attrs,
+    extract_token_usage_from_attrs,
+    is_llm_span,
+    parse_tool_response_content,
+)
 from ..loader.base import Trace
 from ..loader.otlp import OtlpJsonLoader
 from ..trace_attrs import OTEL_GENAI_INPUT_MESSAGES, OTEL_GENAI_REQUEST_MODEL
@@ -794,6 +799,14 @@ class StreamingTraceManager:
         models_used: set[str] = set()
         total_input_tokens = 0
         total_output_tokens = 0
+        total_cache_creation_tokens = 0
+        total_cache_read_tokens = 0
+        providers: set[str] = set()
+        response_models: set[str] = set()
+        finish_reasons: set[str] = set()
+        error_types: set[str] = set()
+        first_temperature: float | None = None
+        first_max_tokens: int | None = None
 
         llm_spans = [s for s in trace.all_spans if is_llm_span(s) or "call_llm" in s.operation_name]
 
@@ -808,12 +821,43 @@ class StreamingTraceManager:
             total_input_tokens += in_toks
             total_output_tokens += out_toks
 
+            ext = extract_extended_model_info_from_attrs(span.tags)
+            if ext["provider"]:
+                providers.add(ext["provider"])
+            if ext["response_model"]:
+                response_models.add(ext["response_model"])
+            finish_reasons.update(ext["finish_reasons"])
+            total_cache_creation_tokens += ext["cache_creation_tokens"]
+            total_cache_read_tokens += ext["cache_read_tokens"]
+            if ext["error_type"]:
+                error_types.add(ext["error_type"])
+            if first_temperature is None and ext["temperature"] is not None:
+                first_temperature = ext["temperature"]
+            if first_max_tokens is None and ext["max_tokens"] is not None:
+                first_max_tokens = ext["max_tokens"]
+
         if models_used:
             model_info["models"] = list(models_used)
         if total_input_tokens > 0:
             model_info["inputTokens"] = total_input_tokens
         if total_output_tokens > 0:
             model_info["outputTokens"] = total_output_tokens
+        if providers:
+            model_info["provider"] = next(iter(providers))
+        if response_models:
+            model_info["responseModels"] = list(response_models)
+        if finish_reasons:
+            model_info["finishReasons"] = list(finish_reasons)
+        if total_cache_creation_tokens > 0:
+            model_info["cacheCreationTokens"] = total_cache_creation_tokens
+        if total_cache_read_tokens > 0:
+            model_info["cacheReadTokens"] = total_cache_read_tokens
+        if first_temperature is not None:
+            model_info["temperature"] = first_temperature
+        if first_max_tokens is not None:
+            model_info["maxTokens"] = first_max_tokens
+        if error_types:
+            model_info["errorTypes"] = list(error_types)
 
         return model_info
 

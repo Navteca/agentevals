@@ -22,14 +22,26 @@ from .trace_attrs import (
     ADK_SCOPE_VALUE,
     ADK_TOOL_CALL_ARGS,
     ADK_TOOL_RESPONSE,
+    OTEL_ERROR_TYPE,
     OTEL_GENAI_INPUT_MESSAGES,
     OTEL_GENAI_OP,
     OTEL_GENAI_OUTPUT_MESSAGES,
+    OTEL_GENAI_PROVIDER_NAME,
+    OTEL_GENAI_REQUEST_MAX_TOKENS,
     OTEL_GENAI_REQUEST_MODEL,
+    OTEL_GENAI_REQUEST_TEMPERATURE,
+    OTEL_GENAI_RESPONSE_FINISH_REASONS,
+    OTEL_GENAI_RESPONSE_ID,
+    OTEL_GENAI_RESPONSE_MODEL,
+    OTEL_GENAI_SYSTEM,
     OTEL_GENAI_TOOL_CALL_ARGUMENTS,
     OTEL_GENAI_TOOL_CALL_ID,
     OTEL_GENAI_TOOL_CALL_RESULT,
+    OTEL_GENAI_TOOL_DESCRIPTION,
     OTEL_GENAI_TOOL_NAME,
+    OTEL_GENAI_TOOL_TYPE,
+    OTEL_GENAI_USAGE_CACHE_CREATION_TOKENS,
+    OTEL_GENAI_USAGE_CACHE_READ_TOKENS,
     OTEL_GENAI_USAGE_INPUT_TOKENS,
     OTEL_GENAI_USAGE_OUTPUT_TOKENS,
     OTEL_SCOPE,
@@ -139,6 +151,68 @@ def extract_token_usage_from_attrs(
     return 0, 0, model
 
 
+def extract_extended_model_info_from_attrs(attrs: dict[str, Any]) -> dict[str, Any]:
+    """Extract extended model and provider metadata from span attributes.
+
+    Returns a dict with provider info, response metadata, request parameters,
+    cache token usage, and error classification. Uses gen_ai.system as fallback
+    for provider when gen_ai.provider.name is absent (backward compat with
+    pre-v1.37.0 instrumentors).
+    """
+    provider = attrs.get(OTEL_GENAI_PROVIDER_NAME)
+    if not provider:
+        provider = attrs.get(OTEL_GENAI_SYSTEM)
+
+    finish_reasons_raw = attrs.get(OTEL_GENAI_RESPONSE_FINISH_REASONS)
+    finish_reasons: list[str] = []
+    if isinstance(finish_reasons_raw, list):
+        finish_reasons = [str(r) for r in finish_reasons_raw]
+    elif isinstance(finish_reasons_raw, str):
+        parsed = parse_json(finish_reasons_raw)
+        if isinstance(parsed, list):
+            finish_reasons = [str(r) for r in parsed]
+        elif finish_reasons_raw:
+            finish_reasons = [finish_reasons_raw]
+
+    temperature = attrs.get(OTEL_GENAI_REQUEST_TEMPERATURE)
+    if temperature is not None:
+        try:
+            temperature = float(temperature)
+        except (TypeError, ValueError):
+            temperature = None
+
+    max_tokens = attrs.get(OTEL_GENAI_REQUEST_MAX_TOKENS)
+    if max_tokens is not None:
+        try:
+            max_tokens = int(max_tokens)
+        except (TypeError, ValueError):
+            max_tokens = None
+
+    cache_creation = attrs.get(OTEL_GENAI_USAGE_CACHE_CREATION_TOKENS, 0)
+    cache_read = attrs.get(OTEL_GENAI_USAGE_CACHE_READ_TOKENS, 0)
+    try:
+        cache_creation = int(cache_creation)
+    except (TypeError, ValueError):
+        cache_creation = 0
+    try:
+        cache_read = int(cache_read)
+    except (TypeError, ValueError):
+        cache_read = 0
+
+    return {
+        "request_model": attrs.get(OTEL_GENAI_REQUEST_MODEL),
+        "response_model": attrs.get(OTEL_GENAI_RESPONSE_MODEL),
+        "provider": provider,
+        "finish_reasons": finish_reasons,
+        "response_id": attrs.get(OTEL_GENAI_RESPONSE_ID),
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "cache_creation_tokens": cache_creation,
+        "cache_read_tokens": cache_read,
+        "error_type": attrs.get(OTEL_ERROR_TYPE),
+    }
+
+
 def extract_tool_call_from_attrs(
     attrs: dict[str, Any], operation_name: str = "", span_id: str = ""
 ) -> dict[str, Any] | None:
@@ -171,7 +245,17 @@ def extract_tool_call_from_attrs(
             if fallback_id:
                 tool_call_id = fallback_id
 
-    return {"id": tool_call_id, "name": tool_name, "args": args}
+    result: dict[str, Any] = {"id": tool_call_id, "name": tool_name, "args": args}
+
+    tool_type = attrs.get(OTEL_GENAI_TOOL_TYPE)
+    if tool_type:
+        result["type"] = tool_type
+
+    tool_description = attrs.get(OTEL_GENAI_TOOL_DESCRIPTION)
+    if tool_description:
+        result["description"] = tool_description
+
+    return result
 
 
 def parse_tool_response_content(content: Any) -> dict:
