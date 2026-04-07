@@ -261,6 +261,7 @@ async def _evaluate_trace(
                 evaluator_def=evaluator_def,
                 actual_invocations=actual_invocations,
                 expected_invocations=expected_invocations,
+                performance_metrics=performance_metrics,
             )
             result.duration_ms = (time.monotonic() - t0) * 1000
         return await _append_result(result)

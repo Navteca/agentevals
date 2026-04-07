@@ -25,6 +25,7 @@ from google.adk.evaluation.evaluator import EvalStatus, EvaluationResult, Evalua
 from agentevals._protocol import (
     EvalInput,
     EvalResult,
+    IntermediateStepData,
     InvocationData,
     ToolCallData,
     ToolResponseData,
@@ -296,33 +297,45 @@ def _extract_tool_responses_from_invocation(inv: Invocation) -> list[ToolRespons
         for tr in inv.intermediate_data.tool_responses or []:
             name = ""
             output = ""
+            status = None
             if hasattr(tr, "name"):
                 name = tr.name or ""
             if hasattr(tr, "response"):
                 output = str(tr.response) if tr.response else ""
             elif hasattr(tr, "output"):
                 output = str(tr.output) if tr.output else ""
-            responses.append(ToolResponseData(name=name, output=output))
+            if hasattr(tr, "status") and tr.status:
+                status = str(tr.status)
+            responses.append(ToolResponseData(name=name, output=output, status=status))
 
     return responses
 
 
-def invocation_to_data(inv: Invocation) -> InvocationData:
+def invocation_to_data(
+    inv: Invocation,
+    performance_metrics: dict[str, Any] | None = None,
+) -> InvocationData:
     """Convert an ADK Invocation to a simplified InvocationData for the protocol."""
     return InvocationData(
         invocation_id=inv.invocation_id or "",
         user_content=_content_to_text(inv.user_content),
         final_response=_content_to_text(inv.final_response) or None,
-        tool_calls=_extract_tool_calls_from_invocation(inv),
-        tool_responses=_extract_tool_responses_from_invocation(inv),
+        intermediate_steps=IntermediateStepData(
+            tool_calls=_extract_tool_calls_from_invocation(inv),
+            tool_responses=_extract_tool_responses_from_invocation(inv),
+        ),
+        performance_metrics=performance_metrics,
     )
 
 
-def invocations_to_data(invocations: list[Invocation] | None) -> list[InvocationData] | None:
+def invocations_to_data(
+    invocations: list[Invocation] | None,
+    performance_metrics: dict[str, Any] | None = None,
+) -> list[InvocationData] | None:
     """Convert a list of ADK Invocations, or return None."""
     if invocations is None:
         return None
-    return [invocation_to_data(inv) for inv in invocations]
+    return [invocation_to_data(inv, performance_metrics=performance_metrics) for inv in invocations]
 
 
 # ---------------------------------------------------------------------------
@@ -382,11 +395,13 @@ class CustomEvaluatorRunner(Evaluator):
         metric_name: str,
         threshold: float = 0.5,
         config: dict[str, Any] | None = None,
+        performance_metrics: dict[str, Any] | None = None,
     ):
         self._backend = backend
         self._metric_name = metric_name
         self._threshold = threshold
         self._config = config or {}
+        self._performance_metrics = performance_metrics
 
     async def evaluate_invocations(
         self,
@@ -399,7 +414,7 @@ class CustomEvaluatorRunner(Evaluator):
             metric_name=self._metric_name,
             threshold=self._threshold,
             config=self._config,
-            invocations=invocations_to_data(actual_invocations) or [],
+            invocations=invocations_to_data(actual_invocations, performance_metrics=self._performance_metrics) or [],
             expected_invocations=invocations_to_data(expected_invocations),
         )
 
@@ -416,6 +431,7 @@ async def evaluate_custom_evaluator(
     evaluator_def,
     actual_invocations: list[Invocation],
     expected_invocations: list[Invocation] | None,
+    performance_metrics: dict[str, Any] | None = None,
 ):
     """Evaluate a single custom evaluator and return a ``MetricResult``.
 
@@ -468,6 +484,7 @@ async def evaluate_custom_evaluator(
         metric_name=evaluator_def.name,
         threshold=evaluator_def.threshold,
         config=evaluator_def.config,
+        performance_metrics=performance_metrics,
     )
 
     try:

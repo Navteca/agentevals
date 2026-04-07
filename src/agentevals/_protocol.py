@@ -34,6 +34,7 @@ class ToolResponseData(BaseModel):
 
     name: str
     output: str = ""
+    status: Optional[str] = None
 
 
 class IntermediateStepData(BaseModel):
@@ -50,6 +51,7 @@ class InvocationData(BaseModel):
     user_content: str = ""
     final_response: Optional[str] = None
     intermediate_steps: IntermediateStepData = Field(default_factory=IntermediateStepData)
+    performance_metrics: Optional[dict[str, Any]] = None
 
 
 class EvalInput(BaseModel):
