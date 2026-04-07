@@ -73,6 +73,10 @@ export function SessionMetadata({ session, liveStats }: SessionMetadataProps) {
         </MetadataItem>
       )}
 
+      {provider && (
+        <MetadataItem label="Provider">{provider}</MetadataItem>
+      )}
+
       {(totalCacheCreation > 0 || totalCacheRead > 0) && (
         <MetadataItem label="Cache Tokens">
           <span style={{ color: '#f59e0b' }}>

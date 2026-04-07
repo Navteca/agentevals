@@ -801,7 +801,7 @@ class StreamingTraceManager:
         total_output_tokens = 0
         total_cache_creation_tokens = 0
         total_cache_read_tokens = 0
-        providers: set[str] = set()
+        first_provider: str | None = None
         response_models: set[str] = set()
         finish_reasons: set[str] = set()
         error_types: set[str] = set()
@@ -809,6 +809,7 @@ class StreamingTraceManager:
         first_max_tokens: int | None = None
 
         llm_spans = [s for s in trace.all_spans if is_llm_span(s) or "call_llm" in s.operation_name]
+        llm_spans.sort(key=lambda s: s.start_time)
 
         for span in llm_spans:
             in_toks, out_toks, model = extract_token_usage_from_attrs(span.tags)
@@ -822,8 +823,8 @@ class StreamingTraceManager:
             total_output_tokens += out_toks
 
             ext = extract_extended_model_info_from_attrs(span.tags)
-            if ext["provider"]:
-                providers.add(ext["provider"])
+            if first_provider is None and ext["provider"]:
+                first_provider = ext["provider"]
             if ext["response_model"]:
                 response_models.add(ext["response_model"])
             finish_reasons.update(ext["finish_reasons"])
@@ -837,17 +838,17 @@ class StreamingTraceManager:
                 first_max_tokens = ext["max_tokens"]
 
         if models_used:
-            model_info["models"] = list(models_used)
+            model_info["models"] = sorted(models_used)
         if total_input_tokens > 0:
             model_info["inputTokens"] = total_input_tokens
         if total_output_tokens > 0:
             model_info["outputTokens"] = total_output_tokens
-        if providers:
-            model_info["provider"] = next(iter(providers))
+        if first_provider:
+            model_info["provider"] = first_provider
         if response_models:
-            model_info["responseModels"] = list(response_models)
+            model_info["responseModels"] = sorted(response_models)
         if finish_reasons:
-            model_info["finishReasons"] = list(finish_reasons)
+            model_info["finishReasons"] = sorted(finish_reasons)
         if total_cache_creation_tokens > 0:
             model_info["cacheCreationTokens"] = total_cache_creation_tokens
         if total_cache_read_tokens > 0:
@@ -857,7 +858,7 @@ class StreamingTraceManager:
         if first_max_tokens is not None:
             model_info["maxTokens"] = first_max_tokens
         if error_types:
-            model_info["errorTypes"] = list(error_types)
+            model_info["errorTypes"] = sorted(error_types)
 
         return model_info
 
