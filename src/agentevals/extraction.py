@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Protocol
+from typing import Any, Protocol, TypedDict, TypeVar
 
 from .loader.base import Span, Trace
 from .trace_attrs import (
@@ -151,64 +151,61 @@ def extract_token_usage_from_attrs(
     return 0, 0, model
 
 
-def extract_extended_model_info_from_attrs(attrs: dict[str, Any]) -> dict[str, Any]:
+_T = TypeVar("_T", int, float)
+
+
+def _safe_cast(value: Any, target_type: type[_T], default: _T | None = None) -> _T | None:
+    """Try to cast *value* to *target_type*, returning *default* on failure."""
+    if value is None:
+        return default
+    try:
+        return target_type(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _parse_finish_reasons(raw: Any) -> list[str]:
+    """Parse finish reasons from a list, JSON string, or plain string."""
+    if isinstance(raw, list):
+        return [str(r) for r in raw]
+    if isinstance(raw, str):
+        parsed = parse_json(raw)
+        if isinstance(parsed, list):
+            return [str(r) for r in parsed]
+        if raw:
+            return [raw]
+    return []
+
+
+class ExtendedModelInfo(TypedDict):
+    request_model: str | None
+    response_model: str | None
+    provider: str | None
+    finish_reasons: list[str]
+    response_id: str | None
+    temperature: float | None
+    max_tokens: int | None
+    cache_creation_tokens: int
+    cache_read_tokens: int
+    error_type: str | None
+
+
+def extract_extended_model_info_from_attrs(attrs: dict[str, Any]) -> ExtendedModelInfo:
     """Extract extended model and provider metadata from span attributes.
 
-    Returns a dict with provider info, response metadata, request parameters,
-    cache token usage, and error classification. Uses gen_ai.system as fallback
-    for provider when gen_ai.provider.name is absent (backward compat with
-    pre-v1.37.0 instrumentors).
+    Uses gen_ai.system as fallback for provider when gen_ai.provider.name is
+    absent (backward compat with pre-v1.37.0 instrumentors).
     """
-    provider = attrs.get(OTEL_GENAI_PROVIDER_NAME)
-    if not provider:
-        provider = attrs.get(OTEL_GENAI_SYSTEM)
-
-    finish_reasons_raw = attrs.get(OTEL_GENAI_RESPONSE_FINISH_REASONS)
-    finish_reasons: list[str] = []
-    if isinstance(finish_reasons_raw, list):
-        finish_reasons = [str(r) for r in finish_reasons_raw]
-    elif isinstance(finish_reasons_raw, str):
-        parsed = parse_json(finish_reasons_raw)
-        if isinstance(parsed, list):
-            finish_reasons = [str(r) for r in parsed]
-        elif finish_reasons_raw:
-            finish_reasons = [finish_reasons_raw]
-
-    temperature = attrs.get(OTEL_GENAI_REQUEST_TEMPERATURE)
-    if temperature is not None:
-        try:
-            temperature = float(temperature)
-        except (TypeError, ValueError):
-            temperature = None
-
-    max_tokens = attrs.get(OTEL_GENAI_REQUEST_MAX_TOKENS)
-    if max_tokens is not None:
-        try:
-            max_tokens = int(max_tokens)
-        except (TypeError, ValueError):
-            max_tokens = None
-
-    cache_creation = attrs.get(OTEL_GENAI_USAGE_CACHE_CREATION_TOKENS, 0)
-    cache_read = attrs.get(OTEL_GENAI_USAGE_CACHE_READ_TOKENS, 0)
-    try:
-        cache_creation = int(cache_creation)
-    except (TypeError, ValueError):
-        cache_creation = 0
-    try:
-        cache_read = int(cache_read)
-    except (TypeError, ValueError):
-        cache_read = 0
-
     return {
         "request_model": attrs.get(OTEL_GENAI_REQUEST_MODEL),
         "response_model": attrs.get(OTEL_GENAI_RESPONSE_MODEL),
-        "provider": provider,
-        "finish_reasons": finish_reasons,
+        "provider": attrs.get(OTEL_GENAI_PROVIDER_NAME) or attrs.get(OTEL_GENAI_SYSTEM),
+        "finish_reasons": _parse_finish_reasons(attrs.get(OTEL_GENAI_RESPONSE_FINISH_REASONS)),
         "response_id": attrs.get(OTEL_GENAI_RESPONSE_ID),
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-        "cache_creation_tokens": cache_creation,
-        "cache_read_tokens": cache_read,
+        "temperature": _safe_cast(attrs.get(OTEL_GENAI_REQUEST_TEMPERATURE), float),
+        "max_tokens": _safe_cast(attrs.get(OTEL_GENAI_REQUEST_MAX_TOKENS), int),
+        "cache_creation_tokens": _safe_cast(attrs.get(OTEL_GENAI_USAGE_CACHE_CREATION_TOKENS), int, 0),
+        "cache_read_tokens": _safe_cast(attrs.get(OTEL_GENAI_USAGE_CACHE_READ_TOKENS), int, 0),
         "error_type": attrs.get(OTEL_ERROR_TYPE),
     }
 
