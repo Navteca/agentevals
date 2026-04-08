@@ -3,10 +3,7 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    flake-utils = {
-      url = "github:numtide/flake-utils";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    flake-utils.url = "github:numtide/flake-utils";
     pyproject-nix = {
       url = "github:pyproject-nix/pyproject.nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -22,10 +19,6 @@
       inputs.uv2nix.follows = "uv2nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    devshell = {
-      url = "github:numtide/devshell";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
   outputs =
@@ -38,25 +31,27 @@
       system:
       let
         workspaceRoot = ./.;
-        venvName = "venv";
 
         pkgs = import nixpkgs {
           inherit system;
           config.allowUnfree = true;
         };
         python = pkgs.python314;
-        workspace = inputs.uv2nix.lib.workspace.loadWorkspace { workspaceRoot = workspaceRoot; };
+
+        workspace = inputs.uv2nix.lib.workspace.loadWorkspace { inherit workspaceRoot; };
         overlay = workspace.mkPyprojectOverlay {
           sourcePreference = "wheel";
         };
+
         # Fix rouge-score missing setuptools build dependency
         rougeScoreOverlay = final: prev: {
           rouge-score = prev.rouge-score.overrideAttrs (old: {
             nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ prev.setuptools ];
           });
         };
+
         baseSet = pkgs.callPackage inputs.pyproject-nix.build.packages {
-          python = python;
+          inherit python;
         };
         pythonSet = baseSet.overrideScope (
           pkgs.lib.composeManyExtensions [
@@ -65,9 +60,22 @@
             rougeScoreOverlay
           ]
         );
-        venv = pythonSet.mkVirtualEnv "${venvName}" workspace.deps.default;
+
+        venv = pythonSet.mkVirtualEnv "agentevals-env" workspace.deps.default;
       in
       {
+        packages = {
+          default = venv;
+          agentevals-cli = pythonSet."agentevals-cli";
+        };
+
+        apps.default = {
+          type = "app";
+          program = "${venv}/bin/agentevals";
+        };
+
+        formatter = pkgs.nixfmt-rfc-style;
+
         devShells.default = pkgs.mkShell {
           packages = [
             # Base
