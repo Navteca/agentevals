@@ -80,7 +80,7 @@ Deployed via Terraform at `terraform-cloud/projects/existing-cluster-agentregist
 
 | Component | Namespace | Source |
 |---|---|---|
-| `agentevals` | `agentevals` | `helm_release.agentevals` — ECR OCI chart, `helm-values/agent-evals.yaml`, image `ECR:navteca/images/agentevals:0.5.2-grpc` |
+| `agentevals` | `agentevals` | `helm_release.agentevals` — ECR OCI chart, `helm-values/agent-evals.yaml`, image `ECR:navteca/images/agentevals:0.5.2-navteca.1` |
 | `otel-collector` | `agentevals` | `helm_release.otel_collector` — **commented out / removed** |
 | `kagent` | `kagent` | `helm_release.kagent` — `helm-values/kagent.yaml` |
 | `usgs-agent` | `default` | kAgent-managed deployment (created by kagent controller from `Agent` CRD) |
@@ -113,7 +113,7 @@ Three files were updated:
 image:
   registry: "607399646027.dkr.ecr.us-east-1.amazonaws.com"
   repository: navteca/images/agentevals
-  tag: "0.5.2-grpc"
+  tag: "0.5.2-navteca.1"
 ```
 
 **`helm-values/kagent.yaml`** — both `otel.tracing` and `otel.logging` endpoints point directly to agentevals gRPC:
