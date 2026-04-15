@@ -17,7 +17,12 @@ from pydantic.alias_generators import to_camel
 
 from agentevals import __version__
 
-from ..builtin_metrics import METRICS_NEEDING_EXPECTED, METRICS_NEEDING_GCP, METRICS_NEEDING_LLM
+from ..builtin_metrics import (
+    METRICS_NEEDING_EXPECTED,
+    METRICS_NEEDING_GCP,
+    METRICS_NEEDING_LLM,
+    METRICS_SKILLS_TRAJECTORY,
+)
 from ..config import (
     BuiltinMetricDef,
     CodeEvaluatorDef,
@@ -118,6 +123,7 @@ async def list_metrics():
         "multi_turn_task_success_v1": "multi-turn",
         "multi_turn_trajectory_quality_v1": "multi-turn",
         "multi_turn_tool_use_quality_v1": "multi-turn",
+        METRICS_SKILLS_TRAJECTORY: "trajectory",
     }
 
     try:
@@ -144,6 +150,19 @@ async def list_metrics():
                     working=m.metric_name not in _METRICS_NEEDING_RUBRICS,
                 )
             )
+
+        metrics.append(
+            MetricInfo(
+                name=METRICS_SKILLS_TRAJECTORY,
+                category="trajectory",
+                requires_eval_set=False,
+                requires_llm=False,
+                requires_gcp=False,
+                requires_rubrics=False,
+                working=True,
+                description="Check whether specific skills (tools) were called, optionally in order",
+            )
+        )
 
         return StandardResponse(data=metrics)
 
@@ -258,6 +277,16 @@ async def list_metrics():
                 requires_rubrics=False,
                 working=True,
                 description="Evaluates function calls made during a multi-turn conversation (Vertex AI)",
+            ),
+            MetricInfo(
+                name=METRICS_SKILLS_TRAJECTORY,
+                category="trajectory",
+                requires_eval_set=False,
+                requires_llm=False,
+                requires_gcp=False,
+                requires_rubrics=False,
+                working=True,
+                description="Check whether specific skills (tools) were called, optionally in order",
             ),
         ]
         return StandardResponse(data=fallback)

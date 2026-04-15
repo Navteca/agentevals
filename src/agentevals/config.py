@@ -145,6 +145,24 @@ class EvalRunConfig(BaseModel):
             raise ValueError(f"Invalid trajectory_match_type '{v}'. Valid values: {sorted(valid)}")
         return v.upper() if v is not None else v
 
+    skills_trajectory_skills: list[str] = Field(
+        default_factory=list,
+        description="Required skill (tool) names for skills_trajectory_v1.",
+    )
+
+    skills_trajectory_match_type: str = Field(
+        default="ANY_ORDER",
+        description="Match type for skills_trajectory_v1: 'ANY_ORDER' or 'IN_ORDER'.",
+    )
+
+    @field_validator("skills_trajectory_match_type")
+    @classmethod
+    def _validate_skills_trajectory_match_type(cls, v: str) -> str:
+        valid = {"ANY_ORDER", "IN_ORDER"}
+        if v.upper() not in valid:
+            raise ValueError(f"Invalid skills_trajectory_match_type '{v}'. Valid values: {sorted(valid)}")
+        return v.upper()
+
     output_format: str = Field(
         default="table",
         description="Output format: 'table', 'json', or 'summary'.",

@@ -29,6 +29,8 @@ from google.adk.evaluation.evaluator import EvaluationResult, Evaluator
 
 logger = logging.getLogger(__name__)
 
+METRICS_SKILLS_TRAJECTORY = "skills_trajectory_v1"
+
 METRICS_NEEDING_EXPECTED = {
     "tool_trajectory_avg_score",
     "response_match_score",
@@ -298,6 +300,78 @@ def extract_trajectory_details(eval_result: EvaluationResult) -> dict[str, Any]:
     return {"comparisons": comparisons}
 
 
+def _evaluate_skills_trajectory(
+    actual_invocations: list[Invocation],
+    skills: list[str],
+    match_type: str | None,
+    threshold: float | None,
+) -> Any:
+    """Evaluate whether required skills (tool names) were called per invocation.
+
+    Score per invocation = fraction of required skills that were called.
+    match_type ``IN_ORDER`` additionally requires the skills appear in the given order.
+    """
+    from .runner import MetricResult
+
+    if not skills:
+        return MetricResult(
+            metric_name=METRICS_SKILLS_TRAJECTORY,
+            error="'skills' list is required for skills_trajectory_v1 but was empty.",
+        )
+
+    effective_threshold = threshold if threshold is not None else 0.5
+    order_matters = (match_type or "ANY_ORDER").upper() == "IN_ORDER"
+
+    per_inv_scores: list[float] = []
+    comparisons: list[dict[str, Any]] = []
+
+    for inv in actual_invocations:
+        called = [tc.name for tc in get_all_tool_calls(inv.intermediate_data)]
+        score = _skills_score(skills, called, order_matters)
+        per_inv_scores.append(score)
+        comparisons.append(
+            {
+                "invocation_id": inv.invocation_id or None,
+                "required_skills": skills,
+                "called_tools": called,
+                "score": score,
+            }
+        )
+
+    overall = sum(per_inv_scores) / len(per_inv_scores) if per_inv_scores else 0.0
+    status = "PASSED" if overall >= effective_threshold else "FAILED"
+
+    return MetricResult(
+        metric_name=METRICS_SKILLS_TRAJECTORY,
+        score=overall,
+        eval_status=status,
+        per_invocation_scores=per_inv_scores,
+        details={"comparisons": comparisons},
+    )
+
+
+def _skills_score(required: list[str], called: list[str], order_matters: bool) -> float:
+    """Return fraction of *required* skills satisfied in *called*, optionally in order."""
+    if not required:
+        return 1.0
+
+    if order_matters:
+        # Subsequence check: each required skill must appear after the previous one
+        pos = 0
+        hits = 0
+        for skill in required:
+            while pos < len(called):
+                if called[pos] == skill:
+                    hits += 1
+                    pos += 1
+                    break
+                pos += 1
+        return hits / len(required)
+
+    called_set = set(called)
+    return sum(1 for s in required if s in called_set) / len(required)
+
+
 async def evaluate_builtin_metric(
     metric_name: str,
     actual_invocations: list[Invocation],
@@ -305,6 +379,8 @@ async def evaluate_builtin_metric(
     judge_model: str | None,
     threshold: float | None,
     match_type: str | None = None,
+    skills: list[str] | None = None,
+    skills_match_type: str | None = None,
 ) -> dict[str, Any]:
     """Evaluate a single built-in ADK metric.
 
@@ -321,6 +397,9 @@ async def evaluate_builtin_metric(
                 f"(golden eval set), but none were provided or matched."
             ),
         )
+
+    if metric_name == METRICS_SKILLS_TRAJECTORY:
+        return _evaluate_skills_trajectory(actual_invocations, skills or [], skills_match_type, threshold)
 
     try:
         eval_metric = build_eval_metric(metric_name, judge_model, threshold, match_type=match_type)

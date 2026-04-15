@@ -141,6 +141,8 @@ async def run_evaluation(
                 judge_model=config.judge_model,
                 threshold=config.threshold,
                 trajectory_match_type=config.trajectory_match_type,
+                skills=config.skills_trajectory_skills,
+                skills_match_type=config.skills_trajectory_match_type,
                 eval_semaphore=eval_semaphore,
                 progress_callback=progress_callback,
                 trace_progress_callback=trace_progress_callback,
@@ -239,6 +241,8 @@ async def _evaluate_trace(
     trace=None,
     performance_metrics: dict[str, Any] | None = None,
     trajectory_match_type: str | None = None,
+    skills: list[str] | None = None,
+    skills_match_type: str | None = None,
 ) -> TraceResult:
     trace_result = TraceResult(
         trace_id=conv_result.trace_id,
@@ -282,6 +286,8 @@ async def _evaluate_trace(
                 judge_model=judge_model,
                 threshold=threshold,
                 match_type=trajectory_match_type,
+                skills=skills,
+                skills_match_type=skills_match_type,
             )
             result.duration_ms = (time.monotonic() - t0) * 1000
         return await _append_result(result)
