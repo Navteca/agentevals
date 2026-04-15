@@ -7,7 +7,13 @@ import inspect
 import logging
 from typing import Any
 
-from google.adk.evaluation.eval_case import Invocation, get_all_tool_calls
+from google.adk.evaluation.eval_case import (
+    IntermediateData,
+    Invocation,
+    InvocationEvent,
+    InvocationEvents,
+    get_all_tool_calls,
+)
 from google.adk.evaluation.eval_metrics import (
     BaseCriterion,
     EvalMetric,
@@ -41,7 +47,115 @@ METRICS_NEEDING_LLM = {
 METRICS_NEEDING_GCP = {
     "response_evaluation_score",
     "safety_v1",
+    "multi_turn_task_success_v1",
+    "multi_turn_trajectory_quality_v1",
+    "multi_turn_tool_use_quality_v1",
 }
+
+_METRICS_NEEDING_INVOCATION_EVENTS = {
+    "multi_turn_task_success_v1",
+    "multi_turn_trajectory_quality_v1",
+    "multi_turn_tool_use_quality_v1",
+}
+
+
+def _to_invocation_events(inv: Invocation) -> Invocation:
+    """Return a copy of *inv* with ``intermediate_data`` shaped as ``InvocationEvents``.
+
+    Multi-turn Vertex AI metrics read ``invocation.intermediate_data.invocation_events``
+    directly, but agentevals' trace converters populate the ``IntermediateData`` variant
+    of the ``IntermediateDataType`` union. This adapter pairs each tool call with its
+    matching tool response (by ``id`` when present, else by position) and emits them
+    interleaved as ``call -> response -> call -> response``. ADK's native runtime
+    authors both calls and responses with the agent name (no separate ``"tool"``
+    actor); we use ``"agent"`` to match that convention so the Vertex judges see
+    the dialog in the shape they expect.
+    """
+    from google.genai import types as genai_types
+
+    if inv.intermediate_data is None or isinstance(inv.intermediate_data, InvocationEvents):
+        return inv
+
+    id_: IntermediateData = inv.intermediate_data
+    response_by_id: dict[str, genai_types.FunctionResponse] = {tr.id: tr for tr in id_.tool_responses if tr.id}
+
+    events: list[InvocationEvent] = []
+    for i, tool_call in enumerate(id_.tool_uses):
+        events.append(
+            InvocationEvent(
+                author="agent",
+                content=genai_types.Content(role="model", parts=[genai_types.Part(function_call=tool_call)]),
+            )
+        )
+
+        match: genai_types.FunctionResponse | None = None
+        if tool_call.id and tool_call.id in response_by_id:
+            match = response_by_id[tool_call.id]
+        elif not tool_call.id and i < len(id_.tool_responses):
+            candidate = id_.tool_responses[i]
+            if not candidate.id:
+                match = candidate
+
+        if match is not None:
+            events.append(
+                InvocationEvent(
+                    author="agent",
+                    content=genai_types.Content(role="user", parts=[genai_types.Part(function_response=match)]),
+                )
+            )
+
+    for author, parts in id_.intermediate_responses:
+        events.append(
+            InvocationEvent(
+                author=author or "agent",
+                content=genai_types.Content(role="model", parts=list(parts)),
+            )
+        )
+
+    return inv.model_copy(update={"intermediate_data": InvocationEvents(invocation_events=events)})
+
+
+def _enrich_app_details(invocations: list[Invocation]) -> list[Invocation]:
+    """Synthesize minimal ``app_details`` so multi-turn metrics can score tool quality.
+
+    Vertex AI's multi-turn evaluators read each invocation's ``app_details.agent_details``
+    to learn which tools the agent has access to (their declarations). Without this,
+    ``multi_turn_tool_use_quality_v1`` cannot score tool use because it has no schema
+    to compare calls against. Our trace converters do not populate ``app_details``, so
+    we synthesize a minimal record from tool names observed across the conversation.
+    """
+    from google.adk.evaluation.app_details import AgentDetails, AppDetails
+    from google.genai import types as genai_types
+
+    if any(inv.app_details and inv.app_details.agent_details for inv in invocations):
+        return invocations
+
+    tool_names: dict[str, None] = {}
+    for inv in invocations:
+        data = inv.intermediate_data
+        if data is None:
+            continue
+        if isinstance(data, IntermediateData):
+            for tc in data.tool_uses:
+                if tc.name:
+                    tool_names.setdefault(tc.name)
+        elif isinstance(data, InvocationEvents):
+            for ev in data.invocation_events:
+                if not (ev.content and ev.content.parts):
+                    continue
+                for part in ev.content.parts:
+                    if part.function_call and part.function_call.name:
+                        tool_names.setdefault(part.function_call.name)
+
+    if not tool_names:
+        return invocations
+
+    function_declarations = [genai_types.FunctionDeclaration(name=name) for name in tool_names]
+    tool = genai_types.Tool(function_declarations=function_declarations)
+    agent_details = AgentDetails(name="agent", instructions="", tool_declarations=[tool])
+    app_details = AppDetails(agent_details={"agent": agent_details})
+
+    return [inv.model_copy(update={"app_details": app_details}) for inv in invocations]
 
 
 def rubric_strings_to_objects(rubric_texts: list[str]) -> list[Rubric]:
@@ -113,6 +227,9 @@ def build_eval_metric(
         "response_match_score",
         "response_evaluation_score",
         "safety_v1",
+        "multi_turn_task_success_v1",
+        "multi_turn_trajectory_quality_v1",
+        "multi_turn_tool_use_quality_v1",
     ):
         criterion = BaseCriterion(threshold=effective_threshold)
 
@@ -208,6 +325,11 @@ async def evaluate_builtin_metric(
     try:
         eval_metric = build_eval_metric(metric_name, judge_model, threshold, match_type=match_type)
         evaluator: Evaluator = get_evaluator(eval_metric)
+
+        if metric_name in _METRICS_NEEDING_INVOCATION_EVENTS:
+            actual_invocations = _enrich_app_details([_to_invocation_events(inv) for inv in actual_invocations])
+            if expected_invocations is not None:
+                expected_invocations = _enrich_app_details([_to_invocation_events(inv) for inv in expected_invocations])
 
         if inspect.iscoroutinefunction(evaluator.evaluate_invocations):
             eval_result: EvaluationResult = await evaluator.evaluate_invocations(
