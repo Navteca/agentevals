@@ -13,64 +13,89 @@ from agentevals.builtin_metrics import (
 )
 from agentevals.config import EvalRunConfig
 from agentevals.converter import convert_traces
-from agentevals.loader.base import Span, Trace
 from agentevals.runner import _evaluate_trace, run_evaluation
 
+from conftest import make_tool_trace
 
-def _make_trace(tools: list[str], trace_id: str = "t1") -> Trace:
-    """Minimal ADK trace calling the given tools."""
-    invoke = Span(
-        trace_id=trace_id,
-        span_id="invoke1",
-        parent_span_id=None,
-        operation_name="invoke_agent test_agent",
-        start_time=1000,
-        duration=10000,
-        tags={"otel.scope.name": "gcp.vertex.agent"},
-    )
-    llm = Span(
-        trace_id=trace_id,
-        span_id="llm1",
-        parent_span_id="invoke1",
-        operation_name="call_llm",
-        start_time=2000,
-        duration=1000,
-        tags={
-            "otel.scope.name": "gcp.vertex.agent",
-            "gcp.vertex.agent.llm_request": json.dumps(
-                {"contents": [{"role": "user", "parts": [{"text": "do something"}]}]}
-            ),
+
+def _write_jaeger_trace(trace_file, tools: list[str], trace_id: str = "t1") -> None:
+    spans = [
+        {
+            "traceID": trace_id,
+            "spanID": "invoke1",
+            "operationName": "invoke_agent test_agent",
+            "references": [],
+            "startTime": 1000000,
+            "duration": 10000000,
+            "tags": [{"key": "otel.scope.name", "type": "string", "value": "gcp.vertex.agent"}],
+            "logs": [],
+            "processID": "p1",
         },
-    )
-    tool_spans = [
-        Span(
-            trace_id=trace_id,
-            span_id=f"tool{i}",
-            parent_span_id="invoke1",
-            operation_name=f"execute_tool {name}",
-            start_time=3000 + i * 100,
-            duration=100,
-            tags={"otel.scope.name": "gcp.vertex.agent"},
-        )
-        for i, name in enumerate(tools)
+        {
+            "traceID": trace_id,
+            "spanID": "llm1",
+            "operationName": "call_llm",
+            "references": [{"refType": "CHILD_OF", "traceID": trace_id, "spanID": "invoke1"}],
+            "startTime": 2000000,
+            "duration": 1000000,
+            "tags": [
+                {"key": "otel.scope.name", "type": "string", "value": "gcp.vertex.agent"},
+                {
+                    "key": "gcp.vertex.agent.llm_request",
+                    "type": "string",
+                    "value": json.dumps({"contents": [{"role": "user", "parts": [{"text": "do something"}]}]}),
+                },
+            ],
+            "logs": [],
+            "processID": "p1",
+        },
     ]
-    llm_resp = Span(
-        trace_id=trace_id,
-        span_id="llm2",
-        parent_span_id="invoke1",
-        operation_name="call_llm",
-        start_time=5000,
-        duration=1000,
-        tags={
-            "otel.scope.name": "gcp.vertex.agent",
-            "gcp.vertex.agent.llm_response": json.dumps({"content": {"role": "model", "parts": [{"text": "done"}]}}),
-        },
+    spans.extend(
+        {
+            "traceID": trace_id,
+            "spanID": f"tool{i}",
+            "operationName": f"execute_tool {name}",
+            "references": [{"refType": "CHILD_OF", "traceID": trace_id, "spanID": "invoke1"}],
+            "startTime": 3000000 + i * 100000,
+            "duration": 100000,
+            "tags": [{"key": "otel.scope.name", "type": "string", "value": "gcp.vertex.agent"}],
+            "logs": [],
+            "processID": "p1",
+        }
+        for i, name in enumerate(tools)
     )
-    invoke.children = [llm, *tool_spans, llm_resp]
-    return Trace(
-        trace_id=trace_id,
-        root_spans=[invoke],
-        all_spans=[invoke, llm, *tool_spans, llm_resp],
+    spans.append(
+        {
+            "traceID": trace_id,
+            "spanID": "llm2",
+            "operationName": "call_llm",
+            "references": [{"refType": "CHILD_OF", "traceID": trace_id, "spanID": "invoke1"}],
+            "startTime": 5000000,
+            "duration": 1000000,
+            "tags": [
+                {"key": "otel.scope.name", "type": "string", "value": "gcp.vertex.agent"},
+                {
+                    "key": "gcp.vertex.agent.llm_response",
+                    "type": "string",
+                    "value": json.dumps({"content": {"role": "model", "parts": [{"text": "done"}]}}),
+                },
+            ],
+            "logs": [],
+            "processID": "p1",
+        }
+    )
+    trace_file.write_text(
+        json.dumps(
+            {
+                "data": [
+                    {
+                        "traceID": trace_id,
+                        "spans": spans,
+                        "processes": {"p1": {"serviceName": "test_agent", "tags": []}},
+                    }
+                ]
+            }
+        )
     )
 
 
@@ -104,13 +129,24 @@ class TestSkillsScore:
     def test_extra_calls_ignored(self):
         assert _skills_score(["a"], ["x", "a", "y"], order_matters=False) == 1.0
 
+    def test_duplicate_required_not_collapsed(self):
+        # required=["a","a"], called=["a"] → only 1 of 2 satisfied → 0.5
+        assert _skills_score(["a", "a"], ["a"], order_matters=False) == pytest.approx(0.5)
+
+    def test_duplicate_required_both_called(self):
+        # required=["a","a"], called=["a","a"] → 2 of 2 satisfied → 1.0
+        assert _skills_score(["a", "a"], ["a", "a"], order_matters=False) == 1.0
+
+    def test_in_order_duplicate_required_partial(self):
+        assert _skills_score(["a", "a"], ["a"], order_matters=True) == pytest.approx(0.5)
+
 
 # ── Unit tests: _evaluate_skills_trajectory ──────────────────────────────────
 
 
 class TestEvaluateSkillsTrajectory:
     def _invocations(self, tools: list[str]):
-        trace = _make_trace(tools)
+        trace = make_tool_trace(tools)
         return convert_traces([trace])[0].invocations
 
     def test_all_skills_found_passes(self):
@@ -164,13 +200,21 @@ class TestEvaluateSkillsTrajectory:
         assert result.score == pytest.approx(2 / 3)
         assert result.eval_status == "FAILED"
 
+    def test_multiple_invocations_average_scores(self):
+        invs = convert_traces([make_tool_trace(["search"], trace_id="t1"), make_tool_trace(["other"], trace_id="t2")])
+        all_invs = [inv for result in invs for inv in result.invocations]
+        metric_result = _evaluate_skills_trajectory(all_invs, ["search"], None, 0.6)
+        assert metric_result.per_invocation_scores == [1.0, 0.0]
+        assert metric_result.score == pytest.approx(0.5)
+        assert metric_result.eval_status == "FAILED"
+
 
 # ── Integration tests: evaluate_builtin_metric ───────────────────────────────
 
 
 class TestEvaluateBuiltinMetricSkills:
     def _invocations(self, tools: list[str]):
-        return convert_traces([_make_trace(tools)])[0].invocations
+        return convert_traces([make_tool_trace(tools)])[0].invocations
 
     def test_dispatches_to_skills_evaluator(self):
         invs = self._invocations(["geocode", "weather"])
@@ -181,7 +225,7 @@ class TestEvaluateBuiltinMetricSkills:
                 expected_invocations=None,
                 judge_model=None,
                 threshold=0.5,
-                skills=["geocode", "weather"],
+                metric_kwargs={"skills": ["geocode", "weather"]},
             )
         )
         assert result.score == 1.0
@@ -197,216 +241,73 @@ class TestEvaluateBuiltinMetricSkills:
                 expected_invocations=None,
                 judge_model=None,
                 threshold=0.5,
-                skills=[],
+                metric_kwargs={"skills": []},
             )
         )
         assert result.error is not None
 
 
-# ── Integration tests: run_evaluation ────────────────────────────────────────
+# ── Integration tests: _evaluate_trace ───────────────────────────────────────
 
 
-class TestRunEvaluationSkills:
-    def test_run_evaluation_skills_pass(self, tmp_path):
-        trace_file = tmp_path / "trace.json"
-        trace = _make_trace(["skill_a", "skill_b"])
-        import json as _json
+class TestSkillsTrajectoryMatchType:
+    """Verify skills_trajectory_v1 scores correctly via _evaluate_trace."""
 
-        from agentevals.loader.jaeger import JaegerJsonLoader
+    def _run(
+        self, tools: list[str], skills: list[str], match_type: str | None = None, threshold: float = 0.5
+    ) -> object:
+        conv_result = convert_traces([make_tool_trace(tools)])[0]
+        return asyncio.run(
+            _evaluate_trace(
+                conv_result=conv_result,
+                metrics=[METRICS_SKILLS_TRAJECTORY],
+                custom_evaluators=[],
+                eval_set=None,
+                judge_model=None,
+                threshold=threshold,
+                trajectory_match_type=None,
+                metric_kwargs={
+                    "skills": skills,
+                    "skills_trajectory_match_type": match_type,
+                },
+                eval_semaphore=asyncio.Semaphore(1),
+            )
+        ).metric_results[0]
 
-        # Serialize via JaegerJsonLoader round-trip isn't available; use converter + write raw
-        # Instead write a minimal jaeger trace file
-        jaeger = {
-            "data": [
-                {
-                    "traceID": "t1",
-                    "spans": [
-                        {
-                            "traceID": "t1",
-                            "spanID": "invoke1",
-                            "operationName": "invoke_agent test_agent",
-                            "references": [],
-                            "startTime": 1000000,
-                            "duration": 10000000,
-                            "tags": [{"key": "otel.scope.name", "type": "string", "value": "gcp.vertex.agent"}],
-                            "logs": [],
-                            "processID": "p1",
-                        },
-                        {
-                            "traceID": "t1",
-                            "spanID": "llm1",
-                            "operationName": "call_llm",
-                            "references": [{"refType": "CHILD_OF", "traceID": "t1", "spanID": "invoke1"}],
-                            "startTime": 2000000,
-                            "duration": 1000000,
-                            "tags": [
-                                {"key": "otel.scope.name", "type": "string", "value": "gcp.vertex.agent"},
-                                {
-                                    "key": "gcp.vertex.agent.llm_request",
-                                    "type": "string",
-                                    "value": _json.dumps(
-                                        {"contents": [{"role": "user", "parts": [{"text": "do something"}]}]}
-                                    ),
-                                },
-                            ],
-                            "logs": [],
-                            "processID": "p1",
-                        },
-                        {
-                            "traceID": "t1",
-                            "spanID": "tool0",
-                            "operationName": "execute_tool skill_a",
-                            "references": [{"refType": "CHILD_OF", "traceID": "t1", "spanID": "invoke1"}],
-                            "startTime": 3000000,
-                            "duration": 100000,
-                            "tags": [{"key": "otel.scope.name", "type": "string", "value": "gcp.vertex.agent"}],
-                            "logs": [],
-                            "processID": "p1",
-                        },
-                        {
-                            "traceID": "t1",
-                            "spanID": "tool1",
-                            "operationName": "execute_tool skill_b",
-                            "references": [{"refType": "CHILD_OF", "traceID": "t1", "spanID": "invoke1"}],
-                            "startTime": 3100000,
-                            "duration": 100000,
-                            "tags": [{"key": "otel.scope.name", "type": "string", "value": "gcp.vertex.agent"}],
-                            "logs": [],
-                            "processID": "p1",
-                        },
-                        {
-                            "traceID": "t1",
-                            "spanID": "llm2",
-                            "operationName": "call_llm",
-                            "references": [{"refType": "CHILD_OF", "traceID": "t1", "spanID": "invoke1"}],
-                            "startTime": 5000000,
-                            "duration": 1000000,
-                            "tags": [
-                                {"key": "otel.scope.name", "type": "string", "value": "gcp.vertex.agent"},
-                                {
-                                    "key": "gcp.vertex.agent.llm_response",
-                                    "type": "string",
-                                    "value": _json.dumps({"content": {"role": "model", "parts": [{"text": "done"}]}}),
-                                },
-                            ],
-                            "logs": [],
-                            "processID": "p1",
-                        },
-                    ],
-                    "processes": {"p1": {"serviceName": "test_agent", "tags": []}},
-                }
-            ]
-        }
-        trace_file.write_text(_json.dumps(jaeger))
-
-        config = EvalRunConfig(
-            trace_files=[str(trace_file)],
-            metrics=[METRICS_SKILLS_TRAJECTORY],
-            skills_trajectory_skills=["skill_a", "skill_b"],
-        )
-        result = asyncio.run(run_evaluation(config))
-
-        assert len(result.errors) == 0
-        mr = result.trace_results[0].metric_results[0]
-        assert mr.metric_name == METRICS_SKILLS_TRAJECTORY
+    def test_all_skills_pass(self):
+        mr = self._run(["skill_a", "skill_b"], ["skill_a", "skill_b"])
         assert mr.score == 1.0
         assert mr.eval_status == "PASSED"
         assert mr.duration_ms is not None
 
-    def test_run_evaluation_skills_in_order_fail(self, tmp_path):
-        import json as _json
-
-        jaeger = {
-            "data": [
-                {
-                    "traceID": "t2",
-                    "spans": [
-                        {
-                            "traceID": "t2",
-                            "spanID": "invoke1",
-                            "operationName": "invoke_agent test_agent",
-                            "references": [],
-                            "startTime": 1000000,
-                            "duration": 10000000,
-                            "tags": [{"key": "otel.scope.name", "type": "string", "value": "gcp.vertex.agent"}],
-                            "logs": [],
-                            "processID": "p1",
-                        },
-                        {
-                            "traceID": "t2",
-                            "spanID": "llm1",
-                            "operationName": "call_llm",
-                            "references": [{"refType": "CHILD_OF", "traceID": "t2", "spanID": "invoke1"}],
-                            "startTime": 2000000,
-                            "duration": 1000000,
-                            "tags": [
-                                {"key": "otel.scope.name", "type": "string", "value": "gcp.vertex.agent"},
-                                {
-                                    "key": "gcp.vertex.agent.llm_request",
-                                    "type": "string",
-                                    "value": _json.dumps({"contents": [{"role": "user", "parts": [{"text": "go"}]}]}),
-                                },
-                            ],
-                            "logs": [],
-                            "processID": "p1",
-                        },
-                        # skill_b called BEFORE skill_a — wrong order
-                        {
-                            "traceID": "t2",
-                            "spanID": "tool0",
-                            "operationName": "execute_tool skill_b",
-                            "references": [{"refType": "CHILD_OF", "traceID": "t2", "spanID": "invoke1"}],
-                            "startTime": 3000000,
-                            "duration": 100000,
-                            "tags": [{"key": "otel.scope.name", "type": "string", "value": "gcp.vertex.agent"}],
-                            "logs": [],
-                            "processID": "p1",
-                        },
-                        {
-                            "traceID": "t2",
-                            "spanID": "tool1",
-                            "operationName": "execute_tool skill_a",
-                            "references": [{"refType": "CHILD_OF", "traceID": "t2", "spanID": "invoke1"}],
-                            "startTime": 3100000,
-                            "duration": 100000,
-                            "tags": [{"key": "otel.scope.name", "type": "string", "value": "gcp.vertex.agent"}],
-                            "logs": [],
-                            "processID": "p1",
-                        },
-                        {
-                            "traceID": "t2",
-                            "spanID": "llm2",
-                            "operationName": "call_llm",
-                            "references": [{"refType": "CHILD_OF", "traceID": "t2", "spanID": "invoke1"}],
-                            "startTime": 5000000,
-                            "duration": 1000000,
-                            "tags": [
-                                {"key": "otel.scope.name", "type": "string", "value": "gcp.vertex.agent"},
-                                {
-                                    "key": "gcp.vertex.agent.llm_response",
-                                    "type": "string",
-                                    "value": _json.dumps({"content": {"role": "model", "parts": [{"text": "done"}]}}),
-                                },
-                            ],
-                            "logs": [],
-                            "processID": "p1",
-                        },
-                    ],
-                    "processes": {"p1": {"serviceName": "test_agent", "tags": []}},
-                }
-            ]
-        }
-        trace_file = tmp_path / "trace2.json"
-        trace_file.write_text(_json.dumps(jaeger))
-
-        config = EvalRunConfig(
-            trace_files=[str(trace_file)],
-            metrics=[METRICS_SKILLS_TRAJECTORY],
-            skills_trajectory_skills=["skill_a", "skill_b"],
-            skills_trajectory_match_type="IN_ORDER",
-            threshold=0.8,
-        )
-        result = asyncio.run(run_evaluation(config))
-        mr = result.trace_results[0].metric_results[0]
-        assert mr.score < 1.0
+    def test_in_order_wrong_order_fails(self):
+        mr = self._run(["skill_b", "skill_a"], ["skill_a", "skill_b"], match_type="IN_ORDER", threshold=0.8)
+        assert mr.score == pytest.approx(0.5)
         assert mr.eval_status == "FAILED"
+
+    def test_any_order_passes_regardless(self):
+        mr = self._run(["skill_b", "skill_a"], ["skill_a", "skill_b"], match_type="ANY_ORDER")
+        assert mr.score == 1.0
+        assert mr.eval_status == "PASSED"
+
+
+class TestRunEvaluationSkills:
+    def test_run_evaluation_end_to_end(self, tmp_path):
+        trace_file = tmp_path / "skills-trace.json"
+        _write_jaeger_trace(trace_file, ["skill_a"])
+
+        result = asyncio.run(
+            run_evaluation(
+                EvalRunConfig(
+                    trace_files=[str(trace_file)],
+                    metrics=[METRICS_SKILLS_TRAJECTORY],
+                    skills_trajectory_skills=["skill_a"],
+                )
+            )
+        )
+
+        assert result.errors == []
+        metric_result = result.trace_results[0].metric_results[0]
+        assert metric_result.metric_name == METRICS_SKILLS_TRAJECTORY
+        assert metric_result.score == 1.0
+        assert metric_result.eval_status == "PASSED"

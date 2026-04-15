@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+from collections import Counter
 from typing import Any
 
 from google.adk.evaluation.eval_case import (
@@ -305,7 +306,7 @@ def _evaluate_skills_trajectory(
     skills: list[str],
     match_type: str | None,
     threshold: float | None,
-) -> Any:
+) -> "MetricResult":
     """Evaluate whether required skills (tool names) were called per invocation.
 
     Score per invocation = fraction of required skills that were called.
@@ -331,7 +332,7 @@ def _evaluate_skills_trajectory(
         per_inv_scores.append(score)
         comparisons.append(
             {
-                "invocation_id": inv.invocation_id or None,
+                "invocation_id": inv.invocation_id,
                 "required_skills": skills,
                 "called_tools": called,
                 "score": score,
@@ -368,8 +369,10 @@ def _skills_score(required: list[str], called: list[str], order_matters: bool) -
                 pos += 1
         return hits / len(required)
 
-    called_set = set(called)
-    return sum(1 for s in required if s in called_set) / len(required)
+    called_counts = Counter(called)
+    required_counts = Counter(required)
+    hits = sum(min(required_counts[s], called_counts[s]) for s in required_counts)
+    return hits / len(required)
 
 
 async def evaluate_builtin_metric(
@@ -379,17 +382,21 @@ async def evaluate_builtin_metric(
     judge_model: str | None,
     threshold: float | None,
     match_type: str | None = None,
-    skills: list[str] | None = None,
-    skills_match_type: str | None = None,
-) -> dict[str, Any]:
+    metric_kwargs: dict[str, Any] | None = None,
+) -> "MetricResult":
     """Evaluate a single built-in ADK metric.
 
-    Returns a dict with keys: metric_name, score, eval_status,
+    Returns a MetricResult with keys: metric_name, score, eval_status,
     per_invocation_scores, error, details.
+
+    ``metric_kwargs`` carries metric-specific extra arguments (e.g. ``skills``
+    and ``skills_trajectory_match_type`` for ``skills_trajectory_v1``).
     """
     from .runner import MetricResult
 
-    if metric_name in METRICS_NEEDING_EXPECTED and not expected_invocations:
+    kw = metric_kwargs or {}
+
+    if metric_name in METRICS_NEEDING_EXPECTED and expected_invocations is None:
         return MetricResult(
             metric_name=metric_name,
             error=(
@@ -398,10 +405,15 @@ async def evaluate_builtin_metric(
             ),
         )
 
-    if metric_name == METRICS_SKILLS_TRAJECTORY:
-        return _evaluate_skills_trajectory(actual_invocations, skills or [], skills_match_type, threshold)
-
     try:
+        if metric_name == METRICS_SKILLS_TRAJECTORY:
+            return _evaluate_skills_trajectory(
+                actual_invocations,
+                kw.get("skills") or [],
+                kw.get("skills_trajectory_match_type"),
+                threshold,
+            )
+
         eval_metric = build_eval_metric(metric_name, judge_model, threshold, match_type=match_type)
         evaluator: Evaluator = get_evaluator(eval_metric)
 

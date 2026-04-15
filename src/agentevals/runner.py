@@ -101,8 +101,6 @@ async def run_evaluation(
 
     conversion_results = convert_traces(all_traces)
 
-    trace_map = {t.trace_id: t for t in all_traces}
-
     perf_metrics_map: dict[str, dict[str, Any]] = {}
     for trace in all_traces:
         perf_metrics_map[trace.trace_id] = extract_performance_metrics(trace)
@@ -131,8 +129,6 @@ async def run_evaluation(
                 )
                 await progress_callback(f"Trace {idx + 1}/{total_traces}: {trace_id_short}")
 
-            trace = trace_map.get(conv_result.trace_id)
-
             return await _evaluate_trace(
                 conv_result=conv_result,
                 metrics=config.metrics,
@@ -141,12 +137,13 @@ async def run_evaluation(
                 judge_model=config.judge_model,
                 threshold=config.threshold,
                 trajectory_match_type=config.trajectory_match_type,
-                skills=config.skills_trajectory_skills,
-                skills_match_type=config.skills_trajectory_match_type,
+                metric_kwargs={
+                    "skills": config.skills_trajectory_skills,
+                    "skills_trajectory_match_type": config.skills_trajectory_match_type,
+                },
                 eval_semaphore=eval_semaphore,
                 progress_callback=progress_callback,
                 trace_progress_callback=trace_progress_callback,
-                trace=trace,
                 performance_metrics=perf_metrics_map.get(conv_result.trace_id),
             )
 
@@ -238,11 +235,9 @@ async def _evaluate_trace(
     eval_semaphore: asyncio.Semaphore,
     progress_callback: ProgressCallback | None = None,
     trace_progress_callback: TraceProgressCallback | None = None,
-    trace=None,
     performance_metrics: dict[str, Any] | None = None,
     trajectory_match_type: str | None = None,
-    skills: list[str] | None = None,
-    skills_match_type: str | None = None,
+    metric_kwargs: dict[str, Any] | None = None,
 ) -> TraceResult:
     trace_result = TraceResult(
         trace_id=conv_result.trace_id,
@@ -286,8 +281,7 @@ async def _evaluate_trace(
                 judge_model=judge_model,
                 threshold=threshold,
                 match_type=trajectory_match_type,
-                skills=skills,
-                skills_match_type=skills_match_type,
+                metric_kwargs=metric_kwargs,
             )
             result.duration_ms = (time.monotonic() - t0) * 1000
         return await _append_result(result)

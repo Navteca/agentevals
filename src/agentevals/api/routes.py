@@ -570,6 +570,8 @@ async def evaluate_traces(
             judge_model=config_dict.get("judgeModel"),
             threshold=threshold,
             trajectory_match_type=config_dict.get("trajectoryMatchType"),
+            skills_trajectory_skills=config_dict.get("skillsTrajectorySkills") or [],
+            skills_trajectory_match_type=config_dict.get("skillsTrajectoryMatchType", "ANY_ORDER"),
         )
 
         logger.info(f"Evaluating {len(trace_paths)} trace file(s) with metrics: {metrics}")
@@ -679,6 +681,8 @@ async def evaluate_traces_stream(
                 judge_model=config_dict.get("judgeModel"),
                 threshold=threshold,
                 trajectory_match_type=config_dict.get("trajectoryMatchType"),
+                skills_trajectory_skills=config_dict.get("skillsTrajectorySkills") or [],
+                skills_trajectory_match_type=config_dict.get("skillsTrajectoryMatchType", "ANY_ORDER"),
             )
 
             loader = get_loader(eval_config.trace_format)
