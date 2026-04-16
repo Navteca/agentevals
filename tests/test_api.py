@@ -589,6 +589,227 @@ class TestEvaluateStream:
 
 
 # ---------------------------------------------------------------------------
+# POST /api/evaluate/json
+# ---------------------------------------------------------------------------
+
+
+def _make_otlp_json_payload() -> dict:
+    return {
+        "resourceSpans": [
+            {
+                "resource": {"attributes": [{"key": "service.name", "value": {"stringValue": "test"}}]},
+                "scopeSpans": [
+                    {
+                        "scope": {"name": "gcp.vertex.agent"},
+                        "spans": [
+                            {
+                                "traceId": "abc123",
+                                "spanId": "span1",
+                                "name": "invoke_agent test",
+                                "startTimeUnixNano": "1000000000",
+                                "endTimeUnixNano": "2000000000",
+                                "attributes": [
+                                    {"key": "gen_ai.operation.name", "value": {"stringValue": "invoke_agent"}},
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+
+
+class TestEvaluateJson:
+    @classmethod
+    def setup_class(cls):
+        cls.client = TestClient(_make_app())
+
+    @patch("agentevals.api.routes.run_evaluation_from_traces", new_callable=AsyncMock)
+    def test_evaluate_json_success(self, mock_eval):
+        mock_eval.return_value = _make_run_result()
+        resp = self.client.post(
+            "/api/evaluate/json",
+            json={
+                "traces": _make_otlp_json_payload(),
+                "config": {"metrics": ["tool_trajectory_avg_score"]},
+            },
+        )
+        body = _assert_envelope(resp)
+        assert "traceResults" in body["data"]
+        assert len(body["data"]["traceResults"]) == 1
+
+    @patch("agentevals.api.routes.run_evaluation_from_traces", new_callable=AsyncMock)
+    def test_evaluate_json_camel_case_config(self, mock_eval):
+        mock_eval.return_value = _make_run_result()
+        resp = self.client.post(
+            "/api/evaluate/json",
+            json={
+                "traces": _make_otlp_json_payload(),
+                "config": {
+                    "metrics": ["hallucinations_v1"],
+                    "judgeModel": "gemini-2.0-flash",
+                    "maxConcurrentTraces": 5,
+                },
+            },
+        )
+        body = _assert_envelope(resp)
+        assert "traceResults" in body["data"]
+        call_config = mock_eval.call_args.kwargs["config"]
+        assert call_config.judge_model == "gemini-2.0-flash"
+        assert call_config.max_concurrent_traces == 5
+
+    def test_evaluate_json_missing_resource_spans(self):
+        resp = self.client.post(
+            "/api/evaluate/json",
+            json={"traces": {"foo": "bar"}, "config": {}},
+        )
+        assert resp.status_code == 400
+        assert "resourceSpans" in resp.json()["detail"]
+
+    def test_evaluate_json_empty_traces(self):
+        resp = self.client.post(
+            "/api/evaluate/json",
+            json={"traces": {"resourceSpans": []}, "config": {}},
+        )
+        assert resp.status_code == 400
+        assert "No traces" in resp.json()["detail"]
+
+    @patch("agentevals.api.routes.run_evaluation_from_traces", new_callable=AsyncMock)
+    def test_evaluate_json_with_eval_set(self, mock_eval):
+        mock_eval.return_value = _make_run_result()
+        resp = self.client.post(
+            "/api/evaluate/json",
+            json={
+                "traces": _make_otlp_json_payload(),
+                "config": {"metrics": ["tool_trajectory_avg_score"]},
+                "evalSet": {
+                    "eval_set_id": "test",
+                    "eval_cases": [
+                        {
+                            "eval_id": "c1",
+                            "conversation": [
+                                {
+                                    "invocation_id": "inv1",
+                                    "user_content": {"role": "user", "parts": [{"text": "hi"}]},
+                                    "final_response": {"role": "model", "parts": [{"text": "hello"}]},
+                                }
+                            ],
+                        }
+                    ],
+                },
+            },
+        )
+        _assert_envelope(resp)
+        assert mock_eval.call_args.kwargs["eval_set"] is not None
+
+    def test_evaluate_json_invalid_eval_set(self):
+        resp = self.client.post(
+            "/api/evaluate/json",
+            json={
+                "traces": _make_otlp_json_payload(),
+                "config": {},
+                "evalSet": {"not_valid": True},
+            },
+        )
+        assert resp.status_code == 400
+        assert "eval set" in resp.json()["detail"].lower()
+
+    def test_evaluate_json_invalid_concurrency(self):
+        resp = self.client.post(
+            "/api/evaluate/json",
+            json={
+                "traces": _make_otlp_json_payload(),
+                "config": {"maxConcurrentTraces": 0},
+            },
+        )
+        assert resp.status_code == 422
+
+    @patch("agentevals.api.routes.run_evaluation_from_traces", new_callable=AsyncMock)
+    def test_evaluate_json_camel_keys_in_result(self, mock_eval):
+        mock_eval.return_value = _make_run_result()
+        resp = self.client.post(
+            "/api/evaluate/json",
+            json={
+                "traces": _make_otlp_json_payload(),
+                "config": {"metrics": ["tool_trajectory_avg_score"]},
+            },
+        )
+        body = resp.json()
+        _assert_all_keys_camel(body)
+
+    @patch("agentevals.api.routes.run_evaluation_from_traces", new_callable=AsyncMock)
+    def test_evaluate_json_default_config(self, mock_eval):
+        mock_eval.return_value = _make_run_result()
+        resp = self.client.post(
+            "/api/evaluate/json",
+            json={"traces": _make_otlp_json_payload()},
+        )
+        body = _assert_envelope(resp)
+        assert "traceResults" in body["data"]
+
+
+# ---------------------------------------------------------------------------
+# POST /api/evaluate/json/stream (SSE)
+# ---------------------------------------------------------------------------
+
+
+class TestEvaluateJsonStream:
+    @classmethod
+    def setup_class(cls):
+        cls.client = TestClient(_make_app())
+
+    @patch("agentevals.api.routes.run_evaluation_from_traces", new_callable=AsyncMock)
+    @patch("agentevals.api.routes.OtlpJsonLoader")
+    def test_stream_content_type(self, mock_loader_cls, mock_eval):
+        mock_loader_cls.return_value.load_from_dict.return_value = []
+        mock_eval.return_value = _make_run_result()
+        resp = self.client.post(
+            "/api/evaluate/json/stream",
+            json={"traces": _make_otlp_json_payload(), "config": {}},
+        )
+        assert resp.headers["content-type"].startswith("text/event-stream")
+
+    @patch("agentevals.api.routes.run_evaluation_from_traces", new_callable=AsyncMock)
+    @patch("agentevals.api.routes.OtlpJsonLoader")
+    def test_stream_done_event(self, mock_loader_cls, mock_eval):
+        mock_trace = MagicMock()
+        mock_trace.trace_id = "abc123"
+        mock_loader_cls.return_value.load_from_dict.return_value = [mock_trace]
+        mock_eval.return_value = _make_run_result()
+
+        resp = self.client.post(
+            "/api/evaluate/json/stream",
+            json={"traces": _make_otlp_json_payload(), "config": {}},
+        )
+        lines = resp.text.strip().split("\n")
+        data_lines = [line for line in lines if line.startswith("data: ")]
+        done_events = [json.loads(line[6:]) for line in data_lines if '"done"' in line]
+        assert len(done_events) == 1
+        assert done_events[0]["done"] is True
+        assert "traceResults" in done_events[0]["result"]
+
+    def test_stream_error_on_invalid_traces(self):
+        resp = self.client.post(
+            "/api/evaluate/json/stream",
+            json={"traces": {"no_resource_spans": True}, "config": {}},
+        )
+        assert resp.status_code == 200
+        body = resp.text
+        assert '"error"' in body
+        assert "resourceSpans" in body
+
+    def test_stream_error_on_empty_traces(self):
+        resp = self.client.post(
+            "/api/evaluate/json/stream",
+            json={"traces": {"resourceSpans": []}, "config": {}},
+        )
+        body = resp.text
+        assert '"error"' in body
+        assert "No traces" in body
+
+
+# ---------------------------------------------------------------------------
 # GET /api/streaming/sessions
 # ---------------------------------------------------------------------------
 

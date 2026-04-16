@@ -144,11 +144,13 @@ class EvalParams(BaseModel):
 
     max_concurrent_traces: int = Field(
         default=10,
+        ge=1,
         description="Maximum number of traces to evaluate concurrently.",
     )
 
     max_concurrent_evals: int = Field(
         default=5,
+        ge=1,
         description="Maximum number of concurrent metric evaluations (LLM API calls).",
     )
 

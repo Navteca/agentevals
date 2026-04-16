@@ -11,7 +11,7 @@ import shutil
 import tempfile
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic.alias_generators import to_camel
 
@@ -69,6 +69,8 @@ def _camel_keys(obj: Any) -> Any:
 
 
 router = APIRouter()
+
+_MAX_JSON_BODY_BYTES = 50 * 1024 * 1024  # 50 MB (multipart endpoints allow 10 MB per file)
 
 _TYPE_TO_MODEL = {
     "builtin": BuiltinMetricDef,
@@ -741,8 +743,15 @@ async def evaluate_traces_stream(
 
 
 @router.post("/evaluate/json", response_model=StandardResponse[RunResult])
-async def evaluate_traces_json(request: EvaluateJsonRequest):
+async def evaluate_traces_json(request: EvaluateJsonRequest, raw_request: Request):
     """Evaluate OTLP JSON traces passed in the request body."""
+    content_length = int(raw_request.headers.get("content-length", 0))
+    if content_length > _MAX_JSON_BODY_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Request body exceeds {_MAX_JSON_BODY_BYTES // (1024 * 1024)}MB limit",
+        )
+
     try:
         traces = OtlpJsonLoader().load_from_dict(request.traces)
     except ValueError as exc:
@@ -760,7 +769,9 @@ async def evaluate_traces_json(request: EvaluateJsonRequest):
 
     try:
         result = await run_evaluation_from_traces(
-            traces=traces, config=request.config, eval_set=eval_set,
+            traces=traces,
+            config=request.config,
+            eval_set=eval_set,
         )
         return StandardResponse(data=_camel_keys(result.model_dump(by_alias=True)))
     except Exception as exc:
@@ -769,8 +780,14 @@ async def evaluate_traces_json(request: EvaluateJsonRequest):
 
 
 @router.post("/evaluate/json/stream")
-async def evaluate_traces_json_stream(request: EvaluateJsonRequest):
+async def evaluate_traces_json_stream(request: EvaluateJsonRequest, raw_request: Request):
     """Evaluate OTLP JSON traces with real-time progress via SSE."""
+    content_length = int(raw_request.headers.get("content-length", 0))
+    if content_length > _MAX_JSON_BODY_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Request body exceeds {_MAX_JSON_BODY_BYTES // (1024 * 1024)}MB limit",
+        )
 
     async def event_generator():
         try:

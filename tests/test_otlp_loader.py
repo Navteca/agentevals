@@ -208,3 +208,247 @@ def test_otlp_loader_empty_file():
 
     finally:
         Path(temp_path).unlink()
+
+
+class TestLoadFromDict:
+    """Tests for OtlpJsonLoader.load_from_dict()."""
+
+    def test_load_from_dict_basic(self):
+        loader = OtlpJsonLoader()
+        data = {
+            "resourceSpans": [
+                {
+                    "resource": {"attributes": [{"key": "service.name", "value": {"stringValue": "test-agent"}}]},
+                    "scopeSpans": [
+                        {
+                            "scope": {"name": "gcp.vertex.agent", "version": "1.0"},
+                            "spans": [
+                                {
+                                    "traceId": "abc123",
+                                    "spanId": "span1",
+                                    "name": "invoke_agent",
+                                    "startTimeUnixNano": "1000000000",
+                                    "endTimeUnixNano": "2000000000",
+                                    "attributes": [{"key": "gen_ai.agent.name", "value": {"stringValue": "my_agent"}}],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+        traces = loader.load_from_dict(data)
+
+        assert len(traces) == 1
+        assert traces[0].trace_id == "abc123"
+        span = traces[0].all_spans[0]
+        assert span.tags["gen_ai.agent.name"] == "my_agent"
+        assert span.tags["service.name"] == "test-agent"
+        assert span.tags["otel.scope.name"] == "gcp.vertex.agent"
+
+    def test_load_from_dict_missing_resource_spans(self):
+        loader = OtlpJsonLoader()
+        with pytest.raises(ValueError, match="resourceSpans"):
+            loader.load_from_dict({"foo": "bar"})
+
+    def test_load_from_dict_empty_resource_spans(self):
+        loader = OtlpJsonLoader()
+        traces = loader.load_from_dict({"resourceSpans": []})
+        assert traces == []
+
+
+class TestFlatDictAttributes:
+    """Tests for flat dict attribute format (e.g. from simplified producers)."""
+
+    def test_span_attributes_as_flat_dict(self):
+        loader = OtlpJsonLoader()
+        data = {
+            "resourceSpans": [
+                {
+                    "resource": {"attributes": {"service.name": "my-agent"}},
+                    "scopeSpans": [
+                        {
+                            "scope": {"name": "test-scope"},
+                            "spans": [
+                                {
+                                    "traceId": "t1",
+                                    "spanId": "s1",
+                                    "name": "test",
+                                    "startTimeUnixNano": "1000000000",
+                                    "endTimeUnixNano": "2000000000",
+                                    "attributes": {
+                                        "gen_ai.operation.name": "chat",
+                                        "gen_ai.usage.input_tokens": 167,
+                                        "gen_ai.usage.output_tokens": 42,
+                                        "enabled": True,
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+        traces = loader.load_from_dict(data)
+        span = traces[0].all_spans[0]
+
+        assert span.tags["gen_ai.operation.name"] == "chat"
+        assert span.tags["gen_ai.usage.input_tokens"] == 167
+        assert span.tags["gen_ai.usage.output_tokens"] == 42
+        assert span.tags["enabled"] is True
+        assert span.tags["service.name"] == "my-agent"
+
+    def test_resource_attributes_as_flat_dict(self):
+        loader = OtlpJsonLoader()
+        data = {
+            "resourceSpans": [
+                {
+                    "resource": {"attributes": {"service.name": "agent", "k8s.namespace.name": "default"}},
+                    "scopeSpans": [
+                        {
+                            "scope": {},
+                            "spans": [
+                                {
+                                    "traceId": "t1",
+                                    "spanId": "s1",
+                                    "name": "test",
+                                    "startTimeUnixNano": "0",
+                                    "endTimeUnixNano": "0",
+                                    "attributes": [],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+        traces = loader.load_from_dict(data)
+        span = traces[0].all_spans[0]
+        assert span.tags["service.name"] == "agent"
+        assert span.tags["k8s.namespace.name"] == "default"
+
+
+class TestNestedDictAttributes:
+    """Tests for ClickHouse JSON column format (nested dicts auto-flattened)."""
+
+    def test_nested_dict_flattened_to_dot_notation(self):
+        loader = OtlpJsonLoader()
+        data = {
+            "resourceSpans": [
+                {
+                    "resource": {
+                        "attributes": {
+                            "service": {"name": "my-agent"},
+                            "k8s": {"namespace": {"name": "prod"}},
+                            "cluster_name": "mgmt",
+                        }
+                    },
+                    "scopeSpans": [
+                        {
+                            "scope": {"name": "strands.telemetry.tracer"},
+                            "spans": [
+                                {
+                                    "traceId": "t1",
+                                    "spanId": "s1",
+                                    "name": "invoke_agent",
+                                    "startTimeUnixNano": "1000000000",
+                                    "endTimeUnixNano": "2000000000",
+                                    "attributes": {
+                                        "gen_ai": {
+                                            "operation": {"name": "invoke_agent"},
+                                            "agent": {"name": "dice_agent"},
+                                            "request": {"model": "gpt-4o"},
+                                            "usage": {"input_tokens": 167, "output_tokens": 11},
+                                        },
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+        traces = loader.load_from_dict(data)
+        span = traces[0].all_spans[0]
+
+        assert span.tags["gen_ai.operation.name"] == "invoke_agent"
+        assert span.tags["gen_ai.agent.name"] == "dice_agent"
+        assert span.tags["gen_ai.request.model"] == "gpt-4o"
+        assert span.tags["gen_ai.usage.input_tokens"] == 167
+        assert span.tags["gen_ai.usage.output_tokens"] == 11
+        assert span.tags["service.name"] == "my-agent"
+        assert span.tags["k8s.namespace.name"] == "prod"
+        assert span.tags["cluster_name"] == "mgmt"
+
+    def test_nested_event_attributes_flattened(self):
+        loader = OtlpJsonLoader()
+        messages_json = '[{"role": "user", "parts": [{"text": "Hello"}]}]'
+        data = {
+            "resourceSpans": [
+                {
+                    "resource": {"attributes": {}},
+                    "scopeSpans": [
+                        {
+                            "scope": {},
+                            "spans": [
+                                {
+                                    "traceId": "t1",
+                                    "spanId": "s1",
+                                    "name": "chat",
+                                    "startTimeUnixNano": "0",
+                                    "endTimeUnixNano": "0",
+                                    "attributes": {},
+                                    "events": [
+                                        {
+                                            "timeUnixNano": "0",
+                                            "name": "gen_ai.client.inference.operation.details",
+                                            "attributes": {
+                                                "gen_ai": {
+                                                    "input": {"messages": messages_json},
+                                                },
+                                            },
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+        traces = loader.load_from_dict(data)
+        span = traces[0].all_spans[0]
+        assert span.tags["gen_ai.input.messages"] == messages_json
+
+    def test_mixed_nested_and_flat_keys(self):
+        """Keys that are already flat should pass through unchanged."""
+        loader = OtlpJsonLoader()
+        data = {
+            "resourceSpans": [
+                {
+                    "resource": {"attributes": {}},
+                    "scopeSpans": [
+                        {
+                            "scope": {},
+                            "spans": [
+                                {
+                                    "traceId": "t1",
+                                    "spanId": "s1",
+                                    "name": "test",
+                                    "startTimeUnixNano": "0",
+                                    "endTimeUnixNano": "0",
+                                    "attributes": {
+                                        "simple_key": "simple_value",
+                                        "nested": {"deep": {"key": 42}},
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+        traces = loader.load_from_dict(data)
+        span = traces[0].all_spans[0]
+        assert span.tags["simple_key"] == "simple_value"
+        assert span.tags["nested.deep.key"] == 42
