@@ -27,13 +27,22 @@ from ..config import (
 )
 from ..converter import convert_traces
 from ..extraction import get_extractor
-from ..runner import RunResult, get_loader, load_eval_set, run_evaluation
+from ..loader.otlp import OtlpJsonLoader
+from ..runner import (
+    RunResult,
+    get_loader,
+    load_eval_set,
+    load_eval_set_from_dict,
+    run_evaluation,
+    run_evaluation_from_traces,
+)
 from ..trace_metrics import extract_performance_metrics, extract_trace_metadata
 from .models import (
     ApiKeyStatus,
     ConfigData,
     ConvertTracesData,
     EvalSetValidation,
+    EvaluateJsonRequest,
     HealthData,
     MetricInfo,
     SSEDoneEvent,
@@ -720,6 +729,137 @@ async def evaluate_traces_stream(
 
         finally:
             shutil.rmtree(temp_dir)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@router.post("/evaluate/json", response_model=StandardResponse[RunResult])
+async def evaluate_traces_json(request: EvaluateJsonRequest):
+    """Evaluate OTLP JSON traces passed in the request body."""
+    try:
+        traces = OtlpJsonLoader().load_from_dict(request.traces)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not traces:
+        raise HTTPException(status_code=400, detail="No traces found in OTLP JSON")
+
+    eval_set = None
+    if request.eval_set:
+        try:
+            eval_set = load_eval_set_from_dict(request.eval_set)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid eval set: {exc}") from exc
+
+    try:
+        result = await run_evaluation_from_traces(
+            traces=traces, config=request.config, eval_set=eval_set,
+        )
+        return StandardResponse(data=_camel_keys(result.model_dump(by_alias=True)))
+    except Exception as exc:
+        logger.exception("JSON evaluation failed")
+        raise HTTPException(status_code=500, detail=f"Internal error: {exc!s}") from exc
+
+
+@router.post("/evaluate/json/stream")
+async def evaluate_traces_json_stream(request: EvaluateJsonRequest):
+    """Evaluate OTLP JSON traces with real-time progress via SSE."""
+
+    async def event_generator():
+        try:
+            try:
+                traces = OtlpJsonLoader().load_from_dict(request.traces)
+            except ValueError as exc:
+                yield f"data: {SSEErrorEvent(error=str(exc)).model_dump_json(by_alias=True)}\n\n"
+                return
+
+            if not traces:
+                yield f"data: {SSEErrorEvent(error='No traces found in OTLP JSON').model_dump_json(by_alias=True)}\n\n"
+                return
+
+            eval_set = None
+            if request.eval_set:
+                try:
+                    eval_set = load_eval_set_from_dict(request.eval_set)
+                except Exception as exc:
+                    yield f"data: {SSEErrorEvent(error=f'Invalid eval set: {exc}').model_dump_json(by_alias=True)}\n\n"
+                    return
+
+            for trace in traces:
+                try:
+                    extractor = get_extractor(trace)
+                    perf_metrics = _camel_keys(extract_performance_metrics(trace, extractor))
+                    trace_metadata = _camel_keys(extract_trace_metadata(trace, extractor))
+                    evt = SSEPerformanceMetricsEvent(
+                        trace_id=trace.trace_id,
+                        performance_metrics=perf_metrics,
+                        trace_metadata=trace_metadata,
+                    )
+                    yield f"event: performance_metrics\ndata: {evt.model_dump_json(by_alias=True)}\n\n"
+                except Exception as e:
+                    logger.error(f"Failed to extract early performance metrics: {e}")
+
+            queue: asyncio.Queue = asyncio.Queue()
+
+            async def progress_callback(message: str):
+                await queue.put(("progress", message))
+
+            async def trace_progress_callback(trace_result):
+                await queue.put(("trace_progress", trace_result))
+
+            async def run_with_progress():
+                result = await run_evaluation_from_traces(
+                    traces=traces,
+                    config=request.config,
+                    eval_set=eval_set,
+                    progress_callback=progress_callback,
+                    trace_progress_callback=trace_progress_callback,
+                )
+                await queue.put(("done", result))
+
+            eval_task = asyncio.create_task(run_with_progress())
+
+            try:
+                while True:
+                    msg = await queue.get()
+                    tag, payload = msg
+
+                    if tag == "done":
+                        evt = SSEDoneEvent(
+                            result=_camel_keys(payload.model_dump(by_alias=True)),
+                        )
+                        yield f"data: {evt.model_dump_json(by_alias=True)}\n\n"
+                        break
+                    elif tag == "trace_progress":
+                        evt = SSETraceProgressEvent(
+                            trace_progress=SSETraceProgress(
+                                trace_id=payload.trace_id,
+                                partial_result=_camel_keys(payload.model_dump(by_alias=True)),
+                            )
+                        )
+                        yield f"data: {evt.model_dump_json(by_alias=True)}\n\n"
+                    elif tag == "progress":
+                        evt = SSEProgressEvent(message=payload)
+                        yield f"data: {evt.model_dump_json(by_alias=True)}\n\n"
+            finally:
+                if not eval_task.done():
+                    eval_task.cancel()
+                    try:
+                        await eval_task
+                    except asyncio.CancelledError:
+                        pass
+
+        except Exception as exc:
+            logger.exception("JSON evaluation stream failed")
+            evt = SSEErrorEvent(error=str(exc))
+            yield f"data: {evt.model_dump_json(by_alias=True)}\n\n"
 
     return StreamingResponse(
         event_generator(),
