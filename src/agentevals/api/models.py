@@ -11,6 +11,8 @@ from typing import Any, Generic, TypeVar
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
+from ..config import EvalParams
+
 T = TypeVar("T")
 
 
@@ -132,6 +134,14 @@ class TraceConversionEntry(CamelModel):
 
 class ConvertTracesData(CamelModel):
     traces: list[TraceConversionEntry]
+
+
+class EvaluateJsonRequest(CamelModel):
+    """Request body for JSON-based trace evaluation (``POST /evaluate/json``)."""
+
+    traces: dict = Field(description="OTLP JSON export with resourceSpans structure.")
+    config: EvalParams = Field(default_factory=EvalParams, description="Evaluation parameters.")
+    eval_set: dict | None = Field(default=None, description="Optional ADK EvalSet JSON.")
 
 
 # ---------------------------------------------------------------------------

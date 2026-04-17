@@ -11,7 +11,7 @@ import shutil
 import tempfile
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic.alias_generators import to_camel
 
@@ -27,13 +27,22 @@ from ..config import (
 )
 from ..converter import convert_traces
 from ..extraction import get_extractor
-from ..runner import RunResult, get_loader, load_eval_set, run_evaluation
+from ..loader.otlp import OtlpJsonLoader
+from ..runner import (
+    RunResult,
+    get_loader,
+    load_eval_set,
+    load_eval_set_from_dict,
+    run_evaluation,
+    run_evaluation_from_traces,
+)
 from ..trace_metrics import extract_performance_metrics, extract_trace_metadata
 from .models import (
     ApiKeyStatus,
     ConfigData,
     ConvertTracesData,
     EvalSetValidation,
+    EvaluateJsonRequest,
     HealthData,
     MetricInfo,
     SSEDoneEvent,
@@ -60,6 +69,8 @@ def _camel_keys(obj: Any) -> Any:
 
 
 router = APIRouter()
+
+_MAX_JSON_BODY_BYTES = 50 * 1024 * 1024  # 50 MB (multipart endpoints allow 10 MB per file)
 
 _TYPE_TO_MODEL = {
     "builtin": BuiltinMetricDef,
@@ -720,6 +731,151 @@ async def evaluate_traces_stream(
 
         finally:
             shutil.rmtree(temp_dir)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+def _parse_json_request(request: EvaluateJsonRequest):
+    """Parse traces and eval set from an EvaluateJsonRequest.
+
+    Returns (traces, eval_set).  Raises HTTPException on invalid input.
+    """
+    try:
+        traces = OtlpJsonLoader().load_from_dict(request.traces)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not traces:
+        raise HTTPException(status_code=400, detail="No traces found in OTLP JSON")
+
+    eval_set = None
+    if request.eval_set:
+        try:
+            eval_set = load_eval_set_from_dict(request.eval_set)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid eval set: {exc}") from exc
+
+    return traces, eval_set
+
+
+def _check_json_body_size(raw_request: Request):
+    content_length = int(raw_request.headers.get("content-length", 0))
+    if content_length > _MAX_JSON_BODY_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Request body exceeds {_MAX_JSON_BODY_BYTES // (1024 * 1024)}MB limit",
+        )
+
+
+def _sse_error(message: str) -> str:
+    return f"data: {SSEErrorEvent(error=message).model_dump_json(by_alias=True)}\n\n"
+
+
+@router.post("/evaluate/json", response_model=StandardResponse[RunResult])
+async def evaluate_traces_json(request: EvaluateJsonRequest, raw_request: Request):
+    """Evaluate OTLP JSON traces passed in the request body."""
+    _check_json_body_size(raw_request)
+    traces, eval_set = _parse_json_request(request)
+
+    try:
+        result = await run_evaluation_from_traces(
+            traces=traces,
+            config=request.config,
+            eval_set=eval_set,
+        )
+        return StandardResponse(data=_camel_keys(result.model_dump(by_alias=True)))
+    except Exception as exc:
+        logger.exception("JSON evaluation failed")
+        raise HTTPException(status_code=500, detail=f"Internal error: {exc!s}") from exc
+
+
+@router.post("/evaluate/json/stream")
+async def evaluate_traces_json_stream(request: EvaluateJsonRequest, raw_request: Request):
+    """Evaluate OTLP JSON traces with real-time progress via SSE."""
+    _check_json_body_size(raw_request)
+
+    async def event_generator():
+        try:
+            try:
+                traces, eval_set = _parse_json_request(request)
+            except HTTPException as exc:
+                yield _sse_error(exc.detail)
+                return
+
+            for trace in traces:
+                try:
+                    extractor = get_extractor(trace)
+                    perf_metrics = _camel_keys(extract_performance_metrics(trace, extractor))
+                    trace_metadata = _camel_keys(extract_trace_metadata(trace, extractor))
+                    evt = SSEPerformanceMetricsEvent(
+                        trace_id=trace.trace_id,
+                        performance_metrics=perf_metrics,
+                        trace_metadata=trace_metadata,
+                    )
+                    yield f"event: performance_metrics\ndata: {evt.model_dump_json(by_alias=True)}\n\n"
+                except Exception as e:
+                    logger.error(f"Failed to extract early performance metrics: {e}")
+
+            queue: asyncio.Queue = asyncio.Queue()
+
+            async def progress_callback(message: str):
+                await queue.put(("progress", message))
+
+            async def trace_progress_callback(trace_result):
+                await queue.put(("trace_progress", trace_result))
+
+            async def run_with_progress():
+                result = await run_evaluation_from_traces(
+                    traces=traces,
+                    config=request.config,
+                    eval_set=eval_set,
+                    progress_callback=progress_callback,
+                    trace_progress_callback=trace_progress_callback,
+                )
+                await queue.put(("done", result))
+
+            eval_task = asyncio.create_task(run_with_progress())
+
+            try:
+                while True:
+                    msg = await queue.get()
+                    tag, payload = msg
+
+                    if tag == "done":
+                        evt = SSEDoneEvent(
+                            result=_camel_keys(payload.model_dump(by_alias=True)),
+                        )
+                        yield f"data: {evt.model_dump_json(by_alias=True)}\n\n"
+                        break
+                    elif tag == "trace_progress":
+                        evt = SSETraceProgressEvent(
+                            trace_progress=SSETraceProgress(
+                                trace_id=payload.trace_id,
+                                partial_result=_camel_keys(payload.model_dump(by_alias=True)),
+                            )
+                        )
+                        yield f"data: {evt.model_dump_json(by_alias=True)}\n\n"
+                    elif tag == "progress":
+                        evt = SSEProgressEvent(message=payload)
+                        yield f"data: {evt.model_dump_json(by_alias=True)}\n\n"
+            finally:
+                if not eval_task.done():
+                    eval_task.cancel()
+                    try:
+                        await eval_task
+                    except asyncio.CancelledError:
+                        pass
+
+        except Exception as exc:
+            logger.exception("JSON evaluation stream failed")
+            yield _sse_error(str(exc))
 
     return StreamingResponse(
         event_generator(),

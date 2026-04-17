@@ -5,7 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic.alias_generators import to_camel
 
 
 class BuiltinMetricDef(BaseModel):
@@ -99,13 +100,14 @@ CustomEvaluatorDef = Annotated[
 ]
 
 
-class EvalRunConfig(BaseModel):
-    trace_files: list[str] = Field(description="Paths to trace files (Jaeger JSON or OTLP JSON).")
+class EvalParams(BaseModel):
+    """Evaluation parameters independent of how traces are provided.
 
-    eval_set_file: str | None = Field(
-        default=None,
-        description="Path to a golden eval set JSON file (ADK EvalSet format).",
-    )
+    Used by ``run_evaluation_from_traces`` for programmatic / API-driven
+    evaluation.  ``EvalRunConfig`` inherits from this and adds file I/O fields.
+    """
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     metrics: list[str] = Field(
         default_factory=lambda: ["tool_trajectory_avg_score"],
@@ -117,11 +119,6 @@ class EvalRunConfig(BaseModel):
         description="Custom evaluator definitions.",
     )
 
-    trace_format: str = Field(
-        default="jaeger-json",
-        description="Format of the trace files (jaeger-json or otlp-json).",
-    )
-
     judge_model: str | None = Field(
         default=None,
         description="LLM model for judge-based metrics.",
@@ -129,7 +126,9 @@ class EvalRunConfig(BaseModel):
 
     threshold: float | None = Field(
         default=None,
-        description="Score threshold for pass/fail.",
+        ge=0,
+        le=1,
+        description="Score threshold for pass/fail (0.0 to 1.0).",
     )
 
     trajectory_match_type: str | None = Field(
@@ -145,17 +144,35 @@ class EvalRunConfig(BaseModel):
             raise ValueError(f"Invalid trajectory_match_type '{v}'. Valid values: {sorted(valid)}")
         return v.upper() if v is not None else v
 
-    output_format: str = Field(
-        default="table",
-        description="Output format: 'table', 'json', or 'summary'.",
-    )
-
     max_concurrent_traces: int = Field(
         default=10,
+        ge=1,
         description="Maximum number of traces to evaluate concurrently.",
     )
 
     max_concurrent_evals: int = Field(
         default=5,
+        ge=1,
         description="Maximum number of concurrent metric evaluations (LLM API calls).",
+    )
+
+
+class EvalRunConfig(EvalParams):
+    """Full configuration for file-based evaluation runs."""
+
+    trace_files: list[str] = Field(description="Paths to trace files (Jaeger JSON or OTLP JSON).")
+
+    eval_set_file: str | None = Field(
+        default=None,
+        description="Path to a golden eval set JSON file (ADK EvalSet format).",
+    )
+
+    trace_format: str = Field(
+        default="jaeger-json",
+        description="Format of the trace files (jaeger-json or otlp-json).",
+    )
+
+    output_format: str = Field(
+        default="table",
+        description="Output format: 'table', 'json', or 'summary'.",
     )

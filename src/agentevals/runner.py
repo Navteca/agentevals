@@ -17,10 +17,11 @@ from pydantic.alias_generators import to_camel
 from .builtin_metrics import evaluate_builtin_metric
 from .config import (
     CustomEvaluatorDef,
+    EvalParams,
     EvalRunConfig,
 )
 from .converter import ConversionResult, convert_traces
-from .loader.base import TraceLoader
+from .loader.base import Trace, TraceLoader
 from .loader.jaeger import JaegerJsonLoader
 from .loader.otlp import OtlpJsonLoader
 from .trace_metrics import _calc_percentiles, extract_performance_metrics
@@ -77,44 +78,32 @@ def load_eval_set(path: str) -> EvalSet:
     return EvalSet.model_validate(data)
 
 
-async def run_evaluation(
-    config: EvalRunConfig,
+def load_eval_set_from_dict(data: dict) -> EvalSet:
+    """Parse an ADK EvalSet from a dict (for programmatic / API use)."""
+    return EvalSet.model_validate(data)
+
+
+async def run_evaluation_from_traces(
+    traces: list[Trace],
+    config: EvalParams,
+    eval_set: EvalSet | None = None,
     progress_callback: ProgressCallback | None = None,
     trace_progress_callback: TraceProgressCallback | None = None,
 ) -> RunResult:
+    """Evaluate pre-loaded traces. Skips file loading."""
     result = RunResult()
 
-    loader = get_loader(config.trace_format)
-    all_traces = []
-    for trace_file in config.trace_files:
-        try:
-            traces = loader.load(trace_file)
-            all_traces.extend(traces)
-        except Exception as exc:
-            msg = f"Failed to load trace file '{trace_file}': {exc}"
-            logger.error(msg)
-            result.errors.append(msg)
-
-    if not all_traces:
-        result.errors.append("No traces loaded.")
+    if not traces:
+        result.errors.append("No traces provided.")
         return result
 
-    conversion_results = convert_traces(all_traces)
+    conversion_results = convert_traces(traces)
 
-    trace_map = {t.trace_id: t for t in all_traces}
+    trace_map = {t.trace_id: t for t in traces}
 
     perf_metrics_map: dict[str, dict[str, Any]] = {}
-    for trace in all_traces:
+    for trace in traces:
         perf_metrics_map[trace.trace_id] = extract_performance_metrics(trace)
-
-    eval_set: EvalSet | None = None
-    if config.eval_set_file:
-        try:
-            eval_set = load_eval_set(config.eval_set_file)
-        except Exception as exc:
-            msg = f"Failed to load eval set '{config.eval_set_file}': {exc}"
-            logger.error(msg)
-            result.errors.append(msg)
 
     total_traces = len(conversion_results)
     if progress_callback:
@@ -223,6 +212,48 @@ async def run_evaluation(
                 "trace_count": trace_count,
             }
 
+    return result
+
+
+async def run_evaluation(
+    config: EvalRunConfig,
+    progress_callback: ProgressCallback | None = None,
+    trace_progress_callback: TraceProgressCallback | None = None,
+) -> RunResult:
+    """Load traces from files, then evaluate. Delegates to ``run_evaluation_from_traces``."""
+    load_errors: list[str] = []
+
+    loader = get_loader(config.trace_format)
+    all_traces: list[Trace] = []
+    for trace_file in config.trace_files:
+        try:
+            all_traces.extend(loader.load(trace_file))
+        except Exception as exc:
+            msg = f"Failed to load trace file '{trace_file}': {exc}"
+            logger.error(msg)
+            load_errors.append(msg)
+
+    if not all_traces:
+        return RunResult(errors=[*load_errors, "No traces loaded."])
+
+    eval_set: EvalSet | None = None
+    if config.eval_set_file:
+        try:
+            eval_set = load_eval_set(config.eval_set_file)
+        except Exception as exc:
+            msg = f"Failed to load eval set '{config.eval_set_file}': {exc}"
+            logger.error(msg)
+            load_errors.append(msg)
+
+    result = await run_evaluation_from_traces(
+        traces=all_traces,
+        config=config,
+        eval_set=eval_set,
+        progress_callback=progress_callback,
+        trace_progress_callback=trace_progress_callback,
+    )
+    if load_errors:
+        result.errors = load_errors + result.errors
     return result
 
 

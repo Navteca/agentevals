@@ -56,6 +56,12 @@ class OtlpJsonLoader(TraceLoader):
         logger.info("Loaded %d trace(s) from %s", len(traces), source)
         return traces
 
+    def load_from_dict(self, data: dict) -> list[Trace]:
+        """Load traces from an OTLP JSON dict (resourceSpans structure)."""
+        if "resourceSpans" not in data:
+            raise ValueError("Expected OTLP JSON with 'resourceSpans' key")
+        return self._parse_otlp_export(data)
+
     def _parse_otlp_export(self, data: dict) -> list[Trace]:
         """Parse full OTLP export structure with resourceSpans."""
         all_spans = []
@@ -122,23 +128,40 @@ class OtlpJsonLoader(TraceLoader):
         Some SDKs (e.g. Strands) store message content in span events rather
         than span attributes. This promotes those values so the converter can
         find them via normal attribute lookups.
+
+        Accepts events in OTLP array format or flat/nested dict format.
         """
         for event in span_data.get("events", []):
-            for attr in event.get("attributes", []):
-                key = attr.get("key", "")
-                if key in self._GENAI_EVENT_KEYS and key not in attributes:
-                    value_obj = attr.get("value", {})
-                    if "stringValue" in value_obj:
-                        attributes[key] = value_obj["stringValue"]
+            event_attrs = event.get("attributes", [])
+            if isinstance(event_attrs, dict):
+                flat = self._flatten_nested_dict(event_attrs)
+                for key in self._GENAI_EVENT_KEYS:
+                    if key in flat and key not in attributes:
+                        attributes[key] = flat[key]
+            else:
+                for attr in event_attrs:
+                    key = attr.get("key", "")
+                    if key in self._GENAI_EVENT_KEYS and key not in attributes:
+                        value_obj = attr.get("value", {})
+                        if "stringValue" in value_obj:
+                            attributes[key] = value_obj["stringValue"]
 
-    def _extract_attributes(self, attrs_list: list[dict]) -> dict:
-        """Convert OTLP attributes array to flat dict.
+    def _extract_attributes(self, attrs) -> dict:
+        """Convert attributes to a flat ``{key: value}`` dict.
 
-        OTLP attributes are [{key, value: {stringValue|intValue|...}}]
-        We flatten to {key: value} for easier use.
+        Accepts three formats:
+        1. OTLP array: ``[{key, value: {stringValue|intValue|...}}]``
+        2. Flat dict: ``{"gen_ai.operation.name": "chat"}``
+        3. Nested dict (ClickHouse JSON column): ``{"gen_ai": {"operation": {"name": "chat"}}}``
+
+        Formats 2 and 3 are auto-detected by checking whether *attrs* is a dict.
+        Nested dicts are recursively flattened to dot-notation keys.
         """
+        if isinstance(attrs, dict):
+            return self._flatten_nested_dict(attrs)
+
         result = {}
-        for attr in attrs_list:
+        for attr in attrs:
             key = attr.get("key", "")
             value_obj = attr.get("value", {})
 
@@ -155,6 +178,25 @@ class OtlpJsonLoader(TraceLoader):
             elif "kvlistValue" in value_obj:
                 result[key] = json.dumps(value_obj["kvlistValue"])
 
+        return result
+
+    @staticmethod
+    def _flatten_nested_dict(d: dict, prefix: str = "") -> dict:
+        """Recursively flatten a nested dict to dot-notation keys.
+
+        ``{"gen_ai": {"operation": {"name": "chat"}}}``
+        becomes ``{"gen_ai.operation.name": "chat"}``.
+
+        Already-flat keys (e.g. ``{"service.name": "agent"}``) pass through
+        unchanged.
+        """
+        result = {}
+        for key, value in d.items():
+            full_key = f"{prefix}{key}" if not prefix else f"{prefix}.{key}"
+            if isinstance(value, dict):
+                result.update(OtlpJsonLoader._flatten_nested_dict(value, full_key))
+            else:
+                result[full_key] = value
         return result
 
     def _build_traces(self, all_spans: list[Span]) -> list[Trace]:
