@@ -126,7 +126,9 @@ class EvalParams(BaseModel):
 
     threshold: float | None = Field(
         default=None,
-        description="Score threshold for pass/fail.",
+        ge=0,
+        le=1,
+        description="Score threshold for pass/fail (0.0 to 1.0).",
     )
 
     trajectory_match_type: str | None = Field(

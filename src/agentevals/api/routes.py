@@ -742,16 +742,11 @@ async def evaluate_traces_stream(
     )
 
 
-@router.post("/evaluate/json", response_model=StandardResponse[RunResult])
-async def evaluate_traces_json(request: EvaluateJsonRequest, raw_request: Request):
-    """Evaluate OTLP JSON traces passed in the request body."""
-    content_length = int(raw_request.headers.get("content-length", 0))
-    if content_length > _MAX_JSON_BODY_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=f"Request body exceeds {_MAX_JSON_BODY_BYTES // (1024 * 1024)}MB limit",
-        )
+def _parse_json_request(request: EvaluateJsonRequest):
+    """Parse traces and eval set from an EvaluateJsonRequest.
 
+    Returns (traces, eval_set).  Raises HTTPException on invalid input.
+    """
     try:
         traces = OtlpJsonLoader().load_from_dict(request.traces)
     except ValueError as exc:
@@ -766,6 +761,28 @@ async def evaluate_traces_json(request: EvaluateJsonRequest, raw_request: Reques
             eval_set = load_eval_set_from_dict(request.eval_set)
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"Invalid eval set: {exc}") from exc
+
+    return traces, eval_set
+
+
+def _check_json_body_size(raw_request: Request):
+    content_length = int(raw_request.headers.get("content-length", 0))
+    if content_length > _MAX_JSON_BODY_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Request body exceeds {_MAX_JSON_BODY_BYTES // (1024 * 1024)}MB limit",
+        )
+
+
+def _sse_error(message: str) -> str:
+    return f"data: {SSEErrorEvent(error=message).model_dump_json(by_alias=True)}\n\n"
+
+
+@router.post("/evaluate/json", response_model=StandardResponse[RunResult])
+async def evaluate_traces_json(request: EvaluateJsonRequest, raw_request: Request):
+    """Evaluate OTLP JSON traces passed in the request body."""
+    _check_json_body_size(raw_request)
+    traces, eval_set = _parse_json_request(request)
 
     try:
         result = await run_evaluation_from_traces(
@@ -782,32 +799,15 @@ async def evaluate_traces_json(request: EvaluateJsonRequest, raw_request: Reques
 @router.post("/evaluate/json/stream")
 async def evaluate_traces_json_stream(request: EvaluateJsonRequest, raw_request: Request):
     """Evaluate OTLP JSON traces with real-time progress via SSE."""
-    content_length = int(raw_request.headers.get("content-length", 0))
-    if content_length > _MAX_JSON_BODY_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=f"Request body exceeds {_MAX_JSON_BODY_BYTES // (1024 * 1024)}MB limit",
-        )
+    _check_json_body_size(raw_request)
 
     async def event_generator():
         try:
             try:
-                traces = OtlpJsonLoader().load_from_dict(request.traces)
-            except ValueError as exc:
-                yield f"data: {SSEErrorEvent(error=str(exc)).model_dump_json(by_alias=True)}\n\n"
+                traces, eval_set = _parse_json_request(request)
+            except HTTPException as exc:
+                yield _sse_error(exc.detail)
                 return
-
-            if not traces:
-                yield f"data: {SSEErrorEvent(error='No traces found in OTLP JSON').model_dump_json(by_alias=True)}\n\n"
-                return
-
-            eval_set = None
-            if request.eval_set:
-                try:
-                    eval_set = load_eval_set_from_dict(request.eval_set)
-                except Exception as exc:
-                    yield f"data: {SSEErrorEvent(error=f'Invalid eval set: {exc}').model_dump_json(by_alias=True)}\n\n"
-                    return
 
             for trace in traces:
                 try:
@@ -875,8 +875,7 @@ async def evaluate_traces_json_stream(request: EvaluateJsonRequest, raw_request:
 
         except Exception as exc:
             logger.exception("JSON evaluation stream failed")
-            evt = SSEErrorEvent(error=str(exc))
-            yield f"data: {evt.model_dump_json(by_alias=True)}\n\n"
+            yield _sse_error(str(exc))
 
     return StreamingResponse(
         event_generator(),
