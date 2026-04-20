@@ -10,13 +10,18 @@ permissions:
   contents: read
 
 jobs:
-  lint:
+  helm-chart:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
-      - name: Helm chart (lint + template)
+      - name: Lint + template
         run: make helm-test
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
 
       - uses: astral-sh/setup-uv@v7
         with:

@@ -10,7 +10,7 @@ DOCKER_IMAGE_REF := $(if $(DOCKER_REGISTRY),$(DOCKER_REGISTRY:%/=%)/$(DOCKER_IMA
 PLATFORMS ?= linux/amd64,linux/arm64
 
 HELM_REPO ?= oci://ghcr.io/agentevals-dev/agentevals
-HELM_DIST_FOLDER ?= dist
+HELM_DIST_FOLDER ?= dist/helm
 HELM_CHART_DIR ?= charts/agentevals
 HELM_CHART_OCI_URL ?= $(HELM_REPO)/helm
 HELM_CHART_VERSION ?= $(VERSION)
