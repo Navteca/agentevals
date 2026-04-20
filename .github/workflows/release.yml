@@ -18,6 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
 
       - uses: astral-sh/setup-uv@v7
         with:
@@ -42,29 +44,13 @@ jobs:
             dist/core/*.whl
             dist/bundle/*.whl
 
-  github-release:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          name: wheels
-          path: dist/
-
-      - uses: softprops/action-gh-release@v2.5.0
-        with:
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
-          files: dist/**/*.whl
-          generate_release_notes: true
-
   publish:
     needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
 
       - uses: astral-sh/setup-uv@v7
         with:
@@ -93,13 +79,34 @@ jobs:
           uv publish dist/* --token ${{ secrets.PYPI_TOKEN }}
           rm -rf src/agentevals/_static
 
+  github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: wheels
+          path: dist/
+
+      - uses: softprops/action-gh-release@v2.5.0
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: dist/**/*.whl
+          generate_release_notes: true
+
   push-docker:
+    needs: github-release
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v4
@@ -131,6 +138,8 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v4
