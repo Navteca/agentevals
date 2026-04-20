@@ -15,6 +15,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Helm chart (lint + template)
+        run: make helm-test
+
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
