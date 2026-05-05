@@ -1,33 +1,26 @@
-"""Synchronous control surface used by ``/api/runs`` HTTP handlers.
+"""Synchronous control surface used by ``/api/runs`` and ``/api/evaluate``.
 
 Wraps the :class:`agentevals.storage.repos.RunRepository` with submit
-idempotency, list pagination, and the 409 spec-mismatch path.
-
-Also provides :meth:`RunService.record_completed_eval` for the
-``/api/evaluate`` path: that handler executes synchronously (the trace was
-already supplied as multipart and the result is being streamed back over
-SSE), so we synthesize a Run row for visibility in run history rather than
-queueing work for the worker.
+idempotency, list pagination, and the 409 spec-mismatch path. Also exposes
+:meth:`RunService.record_eval_run` for the ``/api/evaluate`` path, which
+executes synchronously and synthesizes a Run row for visibility in run
+history rather than queueing work for the worker.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime, timezone
+from typing import Any
 from uuid import UUID, uuid4
 
 from ..config import EvalParams
 from ..runner import RunResult
-from ..storage.models import Run, RunSpec, RunStatus
+from ..storage.models import Run, RunSpec, RunStatus, TraceTarget
 from ..storage.repos import ResultRepository, RunRepository
 from .result_builder import build_results, summarize_run_result
 
 logger = logging.getLogger(__name__)
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 class RunSubmitConflict(Exception):
@@ -54,7 +47,7 @@ class RunService:
             spec=spec,
         )
         persisted = await self._runs.create(run)
-        if persisted.run_id == run.run_id and not _specs_equal(persisted.spec, spec):
+        if persisted.run_id == run.run_id and persisted.spec != spec:
             raise RunSubmitConflict(persisted)
         return persisted
 
@@ -76,30 +69,46 @@ class RunService:
     async def cancel(self, run_id: UUID) -> bool:
         return await self._runs.cancel(run_id)
 
-    async def record_completed_eval(
+    async def record_eval_run(
         self,
         *,
-        spec: RunSpec,
         params: EvalParams,
+        eval_set_dict: dict[str, Any] | None,
+        trace_format: str | None,
+        upload_filenames: list[str] | None,
         run_result: RunResult,
     ) -> Run:
-        """Persist a synchronously-completed eval as a Run row plus Result rows.
+        """Persist a synchronously-completed ``/api/evaluate`` call as a Run
+        row plus Result rows.
 
-        The run is created already in ``running`` state (so the row passes the
-        ``run_running_has_worker`` check is sidestepped via a synthetic worker
-        id), then transitioned to a terminal state in the same call. Two
-        writes per eval, but using the public :class:`RunRepository` API
-        avoids leaking an executor-only schema requirement into this layer.
+        Builds an ``uploaded`` :class:`TraceTarget` from the request metadata,
+        creates a queued run, persists results, then transitions the run to
+        a terminal status. Two writes (create + update_status), but the
+        public :class:`RunRepository` API stays clean of executor-only
+        schema knowledge.
         """
+        filenames = list(upload_filenames or [])
+        target = TraceTarget(
+            kind="uploaded",
+            trace_format=trace_format if trace_format in ("jaeger-json", "otlp-json") else None,
+            trace_count=len(filenames),
+            trace_files=filenames,
+        )
+        spec = RunSpec(
+            approach="trace_replay",
+            target=target,
+            eval_config=params.model_dump(by_alias=False),
+            eval_set=eval_set_dict,
+        )
+
         run_id = uuid4()
-        worker_id = "sync:/api/evaluate"
         run = Run(
             run_id=run_id,
             status=RunStatus.QUEUED,
             spec=spec,
             attempt=1,
-            worker_id=worker_id,
-            started_at=_now(),
+            worker_id="sync:/api/evaluate",
+            started_at=datetime.now(timezone.utc),
         )
         await self._runs.create(run)
 
@@ -117,11 +126,3 @@ class RunService:
             run.status = RunStatus.SUCCEEDED
         run.summary = summary
         return run
-
-
-def _specs_equal(a: RunSpec, b: RunSpec) -> bool:
-    """Deep equality on the JSON projection. Pydantic equality compares model
-    instances by class identity, which trips up the round-trip from JSONB."""
-    return json.dumps(a.model_dump(by_alias=False), sort_keys=True) == json.dumps(
-        b.model_dump(by_alias=False), sort_keys=True
-    )

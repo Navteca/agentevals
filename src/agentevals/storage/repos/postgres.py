@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -23,10 +23,6 @@ if TYPE_CHECKING:
     from ...streaming.session import TraceSession
 
 logger = logging.getLogger(__name__)
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def _row_to_session(row: "asyncpg.Record") -> "TraceSession":

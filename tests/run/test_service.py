@@ -78,7 +78,7 @@ class TestRunServiceQueries:
         assert await svc.cancel(uuid4()) is False
 
 
-class TestRecordCompletedEval:
+class TestRecordEvalRun:
     """Option A: /api/evaluate synchronously persists runs + results."""
 
     def _params(self) -> EvalParams:
@@ -96,25 +96,30 @@ class TestRecordCompletedEval:
             errors=errors or [],
         )
 
-    async def test_persists_run_as_succeeded_when_no_errors(self, service):
-        svc, repos = service
-        run = await svc.record_completed_eval(
-            spec=_spec(),
+    async def _record(self, svc, **overrides):
+        kwargs = dict(
             params=self._params(),
+            eval_set_dict=None,
+            trace_format=None,
+            upload_filenames=["trace-1.json"],
             run_result=self._run_result(),
         )
+        kwargs.update(overrides)
+        return await svc.record_eval_run(**kwargs)
+
+    async def test_persists_run_as_succeeded_when_no_errors(self, service):
+        svc, repos = service
+        run = await self._record(svc)
         assert run.status == RunStatus.SUCCEEDED
         listed = await repos.runs.list()
         assert len(listed) == 1
         assert listed[0].status == RunStatus.SUCCEEDED
+        assert listed[0].spec.target.kind == "uploaded"
+        assert listed[0].spec.target.trace_files == ["trace-1.json"]
 
     async def test_persists_run_as_failed_when_errors_present(self, service):
         svc, repos = service
-        run = await svc.record_completed_eval(
-            spec=_spec(),
-            params=self._params(),
-            run_result=self._run_result(errors=["loader failed"]),
-        )
+        run = await self._record(svc, run_result=self._run_result(errors=["loader failed"]))
         assert run.status == RunStatus.FAILED
         assert run.error and "loader failed" in run.error
         listed = await repos.runs.list()
@@ -122,20 +127,15 @@ class TestRecordCompletedEval:
 
     async def test_persists_result_rows(self, service):
         svc, repos = service
-        run = await svc.record_completed_eval(
-            spec=_spec(),
-            params=self._params(),
-            run_result=self._run_result(),
-        )
+        run = await self._record(svc)
         results = await repos.results.list_by_run(run.run_id)
         assert len(results) == 1
         assert results[0].evaluator_name == "m1"
 
     async def test_summary_attached_to_run(self, service):
         svc, _ = service
-        run = await svc.record_completed_eval(
-            spec=_spec(),
-            params=self._params(),
+        run = await self._record(
+            svc,
             run_result=self._run_result(
                 metrics=[
                     MetricResult(metric_name="m1", eval_status="PASSED"),
@@ -149,7 +149,7 @@ class TestRecordCompletedEval:
 
     async def test_each_call_creates_distinct_run(self, service):
         svc, repos = service
-        a = await svc.record_completed_eval(spec=_spec(), params=self._params(), run_result=self._run_result())
-        b = await svc.record_completed_eval(spec=_spec(), params=self._params(), run_result=self._run_result())
+        a = await self._record(svc)
+        b = await self._record(svc)
         assert a.run_id != b.run_id
         assert len(await repos.runs.list()) == 2

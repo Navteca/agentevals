@@ -120,7 +120,7 @@ class TestEvaluateMultipartSync:
         async def boom(*args, **kwargs):
             raise RuntimeError("simulated persistence outage")
 
-        monkeypatch.setattr(app.state.run_service, "record_completed_eval", boom)
+        monkeypatch.setattr(app.state.run_service, "record_eval_run", boom)
         with TestClient(app) as client:
             with SAMPLE_TRACE.open("rb") as f:
                 r = client.post(

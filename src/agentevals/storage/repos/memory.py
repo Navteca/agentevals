@@ -20,10 +20,6 @@ if TYPE_CHECKING:
     from ...streaming.session import TraceSession
 
 
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
 class MemorySessionRepository:
     def __init__(self) -> None:
         self._sessions: dict[str, TraceSession] = {}
@@ -87,7 +83,7 @@ class MemoryRunRepository:
         return runs[:limit]
 
     async def claim_next(self, *, worker_id: str, lease: timedelta, max_attempts: int) -> Run | None:
-        now = _now()
+        now = datetime.now(timezone.utc)
         async with self._lock:
             candidates = [r for r in self._runs.values() if r.status == RunStatus.QUEUED and r.attempt < max_attempts]
             candidates.sort(key=lambda r: r.created_at)
@@ -125,7 +121,7 @@ class MemoryRunRepository:
             if summary is not None:
                 run.summary = summary
             if status in (RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED):
-                run.finished_at = _now()
+                run.finished_at = datetime.now(timezone.utc)
 
     async def cancel(self, run_id: UUID) -> bool:
         async with self._lock:
@@ -135,7 +131,7 @@ class MemoryRunRepository:
             run.cancel_requested = True
             if run.status == RunStatus.QUEUED:
                 run.status = RunStatus.CANCELLED
-                run.finished_at = _now()
+                run.finished_at = datetime.now(timezone.utc)
             return True
 
 

@@ -1,13 +1,19 @@
-"""Pure-function tests for build_results / summarize_run_result / classify_evaluator."""
+"""Pure-function tests for build_results / summarize_run_result /
+classify_evaluator / result_from_metric_result."""
 
 from __future__ import annotations
 
 from uuid import UUID, uuid4
 
 from agentevals.config import BuiltinMetricDef, CodeEvaluatorDef, EvalParams
-from agentevals.run.result_builder import build_results, classify_evaluator, summarize_run_result
+from agentevals.run.result_builder import (
+    build_results,
+    classify_evaluator,
+    result_from_metric_result,
+    summarize_run_result,
+)
 from agentevals.runner import MetricResult, RunResult, TraceResult
-from agentevals.storage.models import ResultStatus
+from agentevals.storage.models import ResultStatus, compute_result_id
 
 
 def _params(custom_evaluators=None) -> EvalParams:
@@ -69,6 +75,90 @@ class TestBuildResults:
         assert result.eval_set_item_id == "trace-1"
         assert result.eval_set_item_name == "trace-1"
         assert result.trace_id == "trace-1"
+
+
+class TestResultFromMetricResult:
+    """Locks the renaming + status-mapping behavior between the in-pipeline
+    MetricResult shape and the persisted Result shape."""
+
+    def _mr(self, **overrides):
+        defaults = dict(
+            metric_name="tool_trajectory_avg_score",
+            score=0.8,
+            eval_status="PASSED",
+            per_invocation_scores=[1.0, 0.6],
+            error=None,
+            details={"foo": "bar"},
+            duration_ms=42.5,
+        )
+        defaults.update(overrides)
+        return MetricResult(**defaults)
+
+    def _build(self, mr):
+        return result_from_metric_result(
+            run_id=UUID("00000000-0000-0000-0000-000000000001"),
+            eval_set_item_id="item-1",
+            eval_set_item_name="trace-abc",
+            trace_id="trace-abc",
+            evaluator_type="builtin",
+            metric_result=mr,
+        )
+
+    def test_passed_maps_to_passed(self):
+        r = self._build(self._mr(eval_status="PASSED"))
+        assert r.status == ResultStatus.PASSED
+        assert r.score == 0.8
+        assert r.evaluator_name == "tool_trajectory_avg_score"
+        assert r.evaluator_type == "builtin"
+        assert r.eval_set_item_id == "item-1"
+        assert r.trace_id == "trace-abc"
+
+    def test_failed_maps_to_failed(self):
+        r = self._build(self._mr(eval_status="FAILED"))
+        assert r.status == ResultStatus.FAILED
+
+    def test_not_evaluated_maps_to_skipped(self):
+        r = self._build(self._mr(eval_status="NOT_EVALUATED", score=None, per_invocation_scores=[]))
+        assert r.status == ResultStatus.SKIPPED
+
+    def test_unknown_status_maps_to_skipped(self):
+        """Defensive: ADK sometimes emits non-standard status strings;
+        anything unknown should land as skipped, not crash."""
+        r = self._build(self._mr(eval_status="MAYBE_PASSED"))
+        assert r.status == ResultStatus.SKIPPED
+
+    def test_error_dominates_status(self):
+        """Even if eval_status says PASSED, a non-empty error means
+        the row lands as 'errored' so downstream consumers can filter on
+        status alone without special-casing the error column."""
+        r = self._build(self._mr(eval_status="PASSED", error="boom"))
+        assert r.status == ResultStatus.ERRORED
+        assert r.error_text == "boom"
+
+    def test_duration_ms_renamed_to_latency_ms(self):
+        r = self._build(self._mr(duration_ms=42.7))
+        assert r.latency_ms == 42
+
+    def test_latency_ms_none_when_duration_missing(self):
+        r = self._build(self._mr(duration_ms=None))
+        assert r.latency_ms is None
+
+    def test_per_invocation_scores_preserved(self):
+        r = self._build(self._mr(per_invocation_scores=[0.0, 0.5, 1.0]))
+        assert r.per_invocation_scores == [0.0, 0.5, 1.0]
+
+    def test_details_default_to_empty_dict(self):
+        r = self._build(self._mr(details=None))
+        assert r.details == {}
+
+    def test_result_id_matches_canonical_formula(self):
+        r = self._build(self._mr())
+        expected = compute_result_id(
+            UUID("00000000-0000-0000-0000-000000000001"),
+            "item-1",
+            "tool_trajectory_avg_score",
+        )
+        assert r.result_id == expected
 
 
 class TestSummarizeRunResult:

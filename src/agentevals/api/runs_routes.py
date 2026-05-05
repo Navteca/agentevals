@@ -103,12 +103,11 @@ async def list_run_results(run_id: UUID, request: Request):
 
 @runs_router.post("/runs/{run_id}/cancel", response_model=StandardResponse[Run])
 async def cancel_run(run_id: UUID, request: Request):
+    """Mark a run cancel-requested. Idempotent: cancelling an already-terminal
+    run is a no-op and the current state is returned to the caller."""
     service = _service(request)
-    cancelled = await service.cancel(run_id)
+    await service.cancel(run_id)
     run = await service.get(run_id)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"run {run_id} not found")
-    if not cancelled and run.status not in (RunStatus.QUEUED, RunStatus.RUNNING):
-        # Already terminal; surface that to the caller without an error.
-        return StandardResponse(data=run)
     return StandardResponse(data=run)

@@ -95,39 +95,22 @@ async def _maybe_persist_evaluate_run(
     upload_filenames: list[str] | None,
     run_result: "RunResult",
 ) -> str | None:
-    """Persist a synchronously-completed eval as a Run + Result rows when
-    ``app.state.run_service`` is configured (i.e. ``backend=postgres``).
-
-    Returns the synthesized ``run_id`` so the caller can attach it to the
-    response (UI / SSE clients can then ``GET /api/runs/{id}/results`` to
-    pull historical context). Returns None on the memory backend so callers
-    keep their existing zero-config behavior. Errors are logged but never
-    propagated; if persistence fails the eval result is still returned to
-    the caller.
-    """
+    """Best-effort: persist the just-completed eval as a Run row + Result
+    rows when ``app.state.run_service`` is configured (postgres backend).
+    Returns the synthesized ``run_id`` for inclusion in the response, or
+    ``None`` on the memory backend or on persistence failure (eval result
+    is still returned to the caller in that case)."""
     service = getattr(request.app.state, "run_service", None)
     if service is None:
         return None
     try:
-        from ..run.service import RunService
-        from ..storage.models import RunSpec, TraceTarget
-
-        filenames = list(upload_filenames or [])
-        target = TraceTarget(
-            kind="uploaded",
-            trace_format=trace_format if trace_format in ("jaeger-json", "otlp-json") else None,
-            trace_count=len(filenames),
-            trace_files=filenames,
+        run = await service.record_eval_run(
+            params=params,
+            eval_set_dict=eval_set_dict,
+            trace_format=trace_format,
+            upload_filenames=upload_filenames,
+            run_result=run_result,
         )
-        spec_payload = params.model_dump(by_alias=False)
-        spec = RunSpec(
-            approach="trace_replay",
-            target=target,
-            eval_config=spec_payload,
-            eval_set=eval_set_dict,
-        )
-        assert isinstance(service, RunService)
-        run = await service.record_completed_eval(spec=spec, params=params, run_result=run_result)
         return str(run.run_id)
     except Exception:
         logger.exception("failed to persist /api/evaluate run; eval result still returned to caller")

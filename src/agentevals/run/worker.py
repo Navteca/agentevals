@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import socket
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from uuid import UUID
 
 from google.adk.evaluation.eval_set import EvalSet
@@ -30,10 +30,6 @@ from .result_builder import build_results, summarize_run_result
 from .sinks import SinkFanout, build_sinks
 
 logger = logging.getLogger(__name__)
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 class _CancelledByRequest(Exception):
