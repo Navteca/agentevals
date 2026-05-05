@@ -38,6 +38,19 @@ class TestStorageSettings:
         with pytest.raises(Exception, match="unknown storage backend|sqlite"):
             StorageSettings(backend="sqlite")
 
+    def test_schema_name_must_be_sql_identifier(self):
+        """Schema flows into runtime SQL via f-strings (``f'"{schema}".run'``).
+        Anything that isn't a plain identifier must be caught at boot, not
+        silently embedded into queries."""
+        for bad in ('"agentevals"', "drop; DROP TABLE users", "1schema", "with-dash", ""):
+            with pytest.raises(Exception, match="must be a SQL identifier|schema_name"):
+                StorageSettings(schema_name=bad)
+
+    def test_schema_name_default_and_custom(self):
+        assert StorageSettings().schema_name == "agentevals"
+        assert StorageSettings(schema_name="custom_schema").schema_name == "custom_schema"
+        assert StorageSettings(schema_name="_under").schema_name == "_under"
+
     def test_from_env_reads_defaults(self, monkeypatch):
         for var in [
             "AGENTEVALS_STORAGE_BACKEND",

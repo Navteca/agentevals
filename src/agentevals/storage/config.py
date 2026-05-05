@@ -3,19 +3,25 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
 Backend = Literal["memory", "postgres"]
 
+_SQL_IDENT = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
 
 class StorageSettings(BaseModel):
     """Runtime storage knobs.
 
     Read from environment in :meth:`from_env`. Defaults preserve the
-    pre-existing in-memory developer experience: no Postgres required, no
-    ``/api/runs`` endpoints registered.
+    pre-existing in-memory developer experience: no Postgres required, and
+    the ``/api/runs`` endpoints respond ``503 Service Unavailable`` with a
+    hint pointing at ``AGENTEVALS_STORAGE_BACKEND=postgres``. The router is
+    always mounted; the service-unavailable response comes from the route
+    handler when ``app.state.run_service`` is unset.
     """
 
     backend: Backend = "memory"
@@ -35,6 +41,19 @@ class StorageSettings(BaseModel):
     def _validate_backend(cls, v: Backend) -> Backend:
         if v not in ("memory", "postgres"):
             raise ValueError(f"unknown storage backend '{v}'; expected 'memory' or 'postgres'")
+        return v
+
+    @field_validator("schema_name")
+    @classmethod
+    def _validate_schema_name(cls, v: str) -> str:
+        """Schema flows into runtime SQL via f-strings (``f'"{schema}".run'``).
+        Reject anything that isn't a plain SQL identifier so misconfiguration
+        is caught at app startup rather than at first query."""
+        if not _SQL_IDENT.match(v):
+            raise ValueError(
+                f"AGENTEVALS_DATABASE_SCHEMA={v!r}: must be a SQL identifier "
+                "(letters, digits, underscore; not starting with a digit)"
+            )
         return v
 
     def model_post_init(self, __context: object) -> None:

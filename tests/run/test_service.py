@@ -153,3 +153,17 @@ class TestRecordEvalRun:
         b = await self._record(svc)
         assert a.run_id != b.run_id
         assert len(await repos.runs.list()) == 2
+
+    async def test_persisted_run_has_attempt_and_started_at(self, service):
+        """Regression: PostgresRunRepository.create previously hardcoded
+        attempt=0 and silently dropped started_at, so the persisted row was
+        out of sync with the in-memory Run returned by record_eval_run.
+        Re-fetching via the repo must round-trip both fields verbatim."""
+        svc, repos = service
+        run = await self._record(svc)
+        fetched = await repos.runs.get(run.run_id)
+        assert fetched is not None
+        assert fetched.attempt == 1
+        assert fetched.started_at is not None
+        assert fetched.finished_at is not None
+        assert fetched.summary is not None

@@ -69,9 +69,10 @@ def _discover_migrations() -> list[Migration]:
 
 def _apply_schema(sql: str, schema: str) -> str:
     """Substitute the {schema} placeholder. Doubled braces in SQL literals
-    (``'{{}}'``) collapse back to single braces."""
-    if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", schema):
-        raise ValueError(f"invalid schema name '{schema}'; must be a SQL identifier")
+    (``'{{}}'``) collapse back to single braces.
+
+    Schema validation happens once at :class:`StorageSettings` construction
+    via the ``schema_name`` field validator; this helper trusts its input."""
     return sql.replace("{schema}", schema).replace("{{}}", "{}")
 
 

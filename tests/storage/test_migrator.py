@@ -57,17 +57,6 @@ class TestApplySchema:
         sql = "CREATE TABLE {schema}.foo (id INT)"
         assert _apply_schema(sql, "myteam") == "CREATE TABLE myteam.foo (id INT)"
 
-    def test_rejects_non_identifier_schema(self):
-        """Defense against SQL injection via schema name. Schema is taken
-        from an env var which an operator controls but a future bug could
-        plumb in untrusted input; the regex stops anything but a SQL identifier."""
-        with pytest.raises(ValueError, match="invalid schema"):
-            _apply_schema("CREATE TABLE {schema}.foo", "drop; DROP TABLE users")
-
-    def test_rejects_quoted_schema(self):
-        with pytest.raises(ValueError, match="invalid schema"):
-            _apply_schema("X", '"agentevals"')
-
 
 class TestAdvisoryLockKey:
     def test_fits_int8(self):

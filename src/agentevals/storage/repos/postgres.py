@@ -156,12 +156,26 @@ class PostgresRunRepository:
         return f'"{self._schema}".run'
 
     async def create(self, run: Run) -> Run:
+        """Insert a run, persisting every Run field the schema supports.
+
+        ``claimed_at`` and ``lease_expires_at`` are executor-internal and
+        managed by ``claim_next`` / ``update_status``; they are not part of
+        the :class:`Run` model and stay NULL on insert. The
+        ``run_running_has_worker`` CHECK is implicitly satisfied because
+        every caller of ``create()`` passes a non-running status (``submit``
+        passes QUEUED; ``record_eval_run`` passes QUEUED before transitioning
+        to terminal via ``update_status``)."""
         spec_json = run.spec.model_dump_json(by_alias=False)
+        summary_json = json.dumps(run.summary) if run.summary is not None else None
         row = await self._pool.fetchrow(
             f"""
             INSERT INTO {self._t}
-                (run_id, status, approach, spec, attempt, created_at)
-            VALUES ($1, $2, $3, $4::jsonb, 0, $5)
+                (run_id, status, approach, spec, attempt,
+                 worker_id, cancel_requested, error, summary,
+                 created_at, started_at, finished_at)
+            VALUES ($1, $2, $3, $4::jsonb, $5,
+                    $6, $7, $8, $9::jsonb,
+                    $10, $11, $12)
             ON CONFLICT (run_id) DO NOTHING
             RETURNING *
             """,
@@ -169,7 +183,14 @@ class PostgresRunRepository:
             run.status.value,
             run.spec.approach,
             spec_json,
+            run.attempt,
+            run.worker_id,
+            run.cancel_requested,
+            run.error,
+            summary_json,
             run.created_at,
+            run.started_at,
+            run.finished_at,
         )
         if row is not None:
             return _row_to_run(row)

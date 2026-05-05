@@ -1,9 +1,15 @@
 """HTTP router for the async run pipeline.
 
-Mounted only when ``AGENTEVALS_STORAGE_BACKEND=postgres``. Submission is
-idempotent on ``run_id``: re-posting the same id with an identical spec
-returns the persisted row; re-posting with a different spec returns
-``409 Conflict``.
+Always mounted by ``create_app``; the route handlers return
+``503 Service Unavailable`` (with a hint pointing at
+``AGENTEVALS_STORAGE_BACKEND=postgres``) when ``app.state.run_service`` is
+unset. This keeps ``/api/runs`` discoverable in the OpenAPI schema for both
+backends while reserving the actual functionality for the postgres-backed
+deployment.
+
+Submission is idempotent on ``run_id``: re-posting the same id with an
+identical spec returns the persisted row; re-posting with a different spec
+returns ``409 Conflict`` with the persisted spec attached.
 """
 
 from __future__ import annotations
