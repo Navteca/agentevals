@@ -37,7 +37,7 @@ Standard development uses `dev-backend` + `dev-frontend` in separate terminals. 
 The default in-memory backend keeps `make dev-backend` zero-config. To exercise the async run pipeline locally, bring up a Postgres alongside the app:
 
 ```bash
-make pg-up             # start postgres:17-alpine in a docker container (port 5432, ephemeral via --rm)
+make pg-up             # start postgres:18.3-alpine in a docker container (port 5432, ephemeral via --rm)
 make migrate           # apply the agentevals schema
 make dev-backend-pg    # pg-up + migrate + serve --dev with backend=postgres wired up
 make pg-down           # stop the container; data is discarded with --rm

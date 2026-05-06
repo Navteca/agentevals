@@ -66,7 +66,7 @@ pg-up:
 			-e POSTGRES_USER=$(PG_USER) \
 			-e POSTGRES_PASSWORD=$(PG_PASSWORD) \
 			-e POSTGRES_DB=$(PG_DATABASE) \
-			-p $(PG_PORT):5432 postgres:17-alpine; \
+			-p $(PG_PORT):5432 postgres:18.3-alpine; \
 	else \
 		echo "container $(PG_CONTAINER) already running"; \
 	fi
