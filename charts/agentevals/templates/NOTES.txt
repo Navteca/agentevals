@@ -11,3 +11,11 @@ Get the Service URL:
   kubectl --namespace {{ include "agentevals.namespace" . }} port-forward $POD_NAME {{ .Values.service.http.port }}:{{ .Values.service.http.port }}
 
 Health check: GET http://<pod-ip>:{{ .Values.service.http.containerPort }}/api/health
+
+{{- if eq .Values.storage.backend "postgres" }}
+
+NOTE: Postgres-backed storage is a preview feature. The storage.* and
+database.postgres.* values, the /api/runs HTTP surface, and the database
+schema may change incompatibly in upcoming releases. Recreate the
+agentevals schema when upgrading between minor versions.
+{{- end }}

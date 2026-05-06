@@ -28,7 +28,18 @@ from .models import CamelModel, StandardResponse
 
 logger = logging.getLogger(__name__)
 
-runs_router = APIRouter(tags=["runs"])
+runs_router = APIRouter(
+    tags=["runs"],
+    responses={
+        503: {
+            "description": (
+                "Storage backend is not configured. Set "
+                "AGENTEVALS_STORAGE_BACKEND=postgres (with AGENTEVALS_DATABASE_URL) "
+                "to enable run history."
+            )
+        },
+    },
+)
 
 
 class RunRequest(CamelModel):

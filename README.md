@@ -288,6 +288,13 @@ See the [Kubernetes example](examples/kubernetes/README.md) for an end-to-end wa
 
 #### Postgres backend (`/api/runs`)
 
+> **Preview.** Persistent run history backed by Postgres is under active
+> development. The `storage.*` and `database.postgres.*` chart values, the
+> `/api/runs` HTTP surface, and the database schema may change incompatibly
+> in upcoming releases. Operators evaluating this feature should plan to
+> recreate the agentevals schema when upgrading between minor versions.
+> Default in-memory mode is unaffected.
+
 By default the chart deploys agentevals with an in-memory backend; runs and results are not persisted. To enable the async `POST /api/runs` pipeline with durable Postgres-backed state:
 
 ```bash

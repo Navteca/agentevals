@@ -29,6 +29,11 @@ Standard development uses `dev-backend` + `dev-frontend` in separate terminals. 
 
 ### Postgres backend (optional, for `/api/runs`)
 
+> **Preview.** The schema, the CLI surface, and `/api/runs` shape are still
+> stabilizing. Recreate the agentevals schema between minor version upgrades
+> until further notice; do not depend on persisted data surviving a
+> `git pull` of agentevals itself.
+
 The default in-memory backend keeps `make dev-backend` zero-config. To exercise the async run pipeline locally, bring up a Postgres alongside the app:
 
 ```bash

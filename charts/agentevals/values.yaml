@@ -160,13 +160,19 @@ env: []
 envFrom: []
 
 # ==============================================================================
-# STORAGE
+# STORAGE  (preview feature)
+#
+# Persistent run history backed by Postgres is under active development.
+# storage.* and database.postgres.* keys, and the underlying schema, may
+# change incompatibly in upcoming releases. Treat persisted runs and
+# results as ephemeral; recreate the agentevals schema when upgrading
+# between minor versions. Default in-memory backend is unaffected.
 # ==============================================================================
 
 storage:
   # -- Storage backend. "memory" (default) keeps the developer experience
   # zero-config: nothing persisted, restarts lose in-flight state. "postgres"
-  # enables /api/runs and persists runs + results in Postgres.
+  # enables /api/runs and persists runs + results in Postgres (preview).
   backend: memory
 
 # ==============================================================================

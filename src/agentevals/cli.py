@@ -767,6 +767,10 @@ def _migrator_or_die() -> "object":
 @click.option("--dry-run", is_flag=True, help="Print which migrations would apply without executing.")
 def migrate_up(dry_run: bool) -> None:
     """Apply all pending migrations."""
+    click.echo(
+        "note: agentevals migrate is a preview feature. Schema may change incompatibly between minor releases.",
+        err=True,
+    )
     migrator = _migrator_or_die()
     try:
         applied = asyncio.run(migrator.up(dry_run=dry_run))

@@ -109,6 +109,18 @@ def create_app(
         version=__version__,
         description="REST API for evaluating agent traces using ADK's scoring framework",
         lifespan=_build_lifespan(),
+        openapi_tags=[
+            {
+                "name": "runs",
+                "description": (
+                    "**Preview.** Async run pipeline backed by Postgres. The shape of "
+                    "submission, responses, and persisted run / result data may change "
+                    "incompatibly in upcoming releases. Operators evaluating this "
+                    "surface should plan to recreate persisted data when upgrading "
+                    "agentevals between minor versions."
+                ),
+            },
+        ],
     )
 
     app.add_middleware(
