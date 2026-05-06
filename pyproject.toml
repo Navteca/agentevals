@@ -46,9 +46,6 @@ artifacts = ["src/agentevals/_static/**"]
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentevals"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"src/agentevals/storage/postgres/migrations" = "agentevals/storage/postgres/migrations"
-
 [tool.uv.workspace]
 members = ["packages/evaluator-sdk-py"]
 
